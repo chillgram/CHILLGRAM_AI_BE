@@ -21,6 +21,8 @@ public class SecurityConfig {
                 .cors(cors -> {}) // Bean에서 공급
                 .authorizeExchange(ex -> ex
                         .pathMatchers("/actuator/**").permitAll()
+                        .pathMatchers("/api/**").permitAll()
+                        .pathMatchers("/**").permitAll()
                         .pathMatchers(HttpMethod.OPTIONS).permitAll() // preflight 통과
                         .anyExchange().authenticated()
                 )
@@ -33,8 +35,8 @@ public class SecurityConfig {
 
         // React 개발 서버 / 운영 도메인으로 바꿔서 사용
         config.setAllowedOrigins(List.of(
-                "http://localhost:3000",
-                "http://127.0.0.1:3000"
+                "http://localhost:5173",
+                "http://127.0.0.1:5173"
         ));
 
         config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
