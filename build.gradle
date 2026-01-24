@@ -30,11 +30,13 @@ dependencies {
 //	implementation 'org.springframework.boot:spring-boot-starter-jooq' JDBC 기반
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 	implementation 'org.springframework.boot:spring-boot-starter-webflux'
-	testImplementation 'org.springframework.boot:spring-boot-starter-test'
-	testImplementation 'io.projectreactor:reactor-test'
-	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+	// test
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation "io.projectreactor:reactor-test"
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
 	// Security (JWT)
 	implementation 'org.springframework.boot:spring-boot-starter-security'
@@ -57,4 +59,5 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	jvmArgs += ["-XX:+EnableDynamicAgentLoading"]
 }
