@@ -28,7 +28,7 @@ repositories {
 
 dependencyManagement {
 	imports {
-		mavenBom "org.springframework.ai:spring-ai-bom:1.0.0-M6"
+		mavenBom "org.springframework.ai:spring-ai-bom:1.1.2"
 	}
 }
 
@@ -63,8 +63,8 @@ dependencies {
 	testCompileOnly 'org.projectlombok:lombok:1.18.38'
 	testAnnotationProcessor 'org.projectlombok:lombok:1.18.38'
 
-	// Spring AI (Gemini API Key 방식 - OpenAI 호환)
-	implementation 'org.springframework.ai:spring-ai-openai-spring-boot-starter:1.0.0-M6'
+	// Spring AI (Google Gemini Native)
+	implementation 'org.springframework.ai:spring-ai-starter-model-google-genai'
 }
 
 tasks.named('test') {
