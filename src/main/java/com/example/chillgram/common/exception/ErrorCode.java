@@ -7,6 +7,11 @@ public enum ErrorCode {
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "잘못된 요청입니다."),
     VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "요청 값이 유효하지 않습니다."),
 
+    // auth (400) - 이메일 인증/토큰
+    AUTH_EMAIL_TOKEN_INVALID(HttpStatus.BAD_REQUEST, "유효하지 않거나 만료된 링크입니다."),
+    AUTH_EMAIL_ALREADY_VERIFIED(HttpStatus.BAD_REQUEST, "이미 이메일 인증이 완료되었습니다."),
+    AUTH_ACCOUNT_DELETED(HttpStatus.BAD_REQUEST, "유효하지 않거나 만료된 링크입니다."),
+
     // 401/403
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
     FORBIDDEN(HttpStatus.FORBIDDEN, "권한이 없습니다."),
