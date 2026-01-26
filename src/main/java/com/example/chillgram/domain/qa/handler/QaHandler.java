@@ -58,6 +58,71 @@ public class QaHandler {
                 });
     }
 
+    public Mono<ServerResponse> getQuestionList(ServerRequest request) {
+        // Query Params Parsing
+        int page = Integer.parseInt(request.queryParam("page").orElse("0"));
+        int size = Integer.parseInt(request.queryParam("size").orElse("10"));
+        String search = request.queryParam("search").orElse(null);
+        String status = request.queryParam("status").orElse("ALL");
+
+        return qaService.getQuestionList(page, size, search, status)
+                .flatMap(response -> ServerResponse.ok()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(response))
+                .onErrorResume(e -> {
+                    log.error("Failed to get question list", e);
+                    return ServerResponse.badRequest()
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .bodyValue(Map.of("error", e.getMessage()));
+                });
+    }
+
+    public Mono<ServerResponse> getQuestionDetail(ServerRequest request) {
+        Long questionId = Long.parseLong(request.pathVariable("id"));
+
+        return qaService.getQuestionDetail(questionId)
+                .flatMap(response -> ServerResponse.ok()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(response))
+                .onErrorResume(e -> {
+                    log.error("Failed to get question detail", e);
+                    return ServerResponse.notFound().build();
+                });
+    }
+
+    // ==================== 답변 작성 ====================
+    public Mono<ServerResponse> createAnswer(ServerRequest request) {
+        Long questionId = Long.parseLong(request.pathVariable("questionId"));
+
+        return request.bodyToMono(AnswerRequest.class)
+                .flatMap(req -> {
+                    // Validation
+                    if (req.body == null || req.body.isBlank()) {
+                        return ServerResponse.badRequest()
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .bodyValue(Map.of("error", "Answer body is required"));
+                    }
+
+                    return qaService.createAnswer(questionId, req.body, req.companyId, req.answeredBy)
+                            .flatMap(response -> ServerResponse.status(201)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .bodyValue(response));
+                })
+                .onErrorResume(e -> {
+                    log.error("Failed to create answer", e);
+                    return ServerResponse.badRequest()
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .bodyValue(Map.of("error", e.getMessage()));
+                });
+    }
+
+    // 답변 요청 DTO (내부 클래스)
+    private static class AnswerRequest {
+        public String body;
+        public Long companyId;
+        public Long answeredBy;
+    }
+
     private String getFormValue(Map<String, Part> partMap, String key) {
         if (!partMap.containsKey(key)) {
             return "";
