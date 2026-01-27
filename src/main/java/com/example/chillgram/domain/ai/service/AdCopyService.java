@@ -20,10 +20,18 @@ import java.util.regex.Pattern;
 public class AdCopyService {
     private final ChatClient.Builder chatClientBuilder;
 
+    public AdCopyService(
+            org.springframework.beans.factory.ObjectProvider<ChatClient.Builder> chatClientBuilderProvider) {
+        this.chatClientBuilder = chatClientBuilderProvider.getIfAvailable();
+    }
+
     /**
      * 1단계: 키워드 기반 가이드라인 5개 생성
      */
     public GuidelineResponse generateGuidelines(GuidelineRequest request) {
+        if (chatClientBuilder == null) {
+            throw new RuntimeException("AI 기능이 비활성화되어 있습니다. (API Key 누락)");
+        }
         ChatClient chatClient = chatClientBuilder.build();
 
         String prompt = """
@@ -52,6 +60,9 @@ public class AdCopyService {
      * 2단계: 가이드라인 기반 최종 카피 및 프롬프트 생성
      */
     public FinalCopyResponse generateFinalCopy(FinalCopyRequest request) {
+        if (chatClientBuilder == null) {
+            throw new RuntimeException("AI 기능이 비활성화되어 있습니다. (API Key 누락)");
+        }
         ChatClient chatClient = chatClientBuilder.build();
 
         String prompt = """
