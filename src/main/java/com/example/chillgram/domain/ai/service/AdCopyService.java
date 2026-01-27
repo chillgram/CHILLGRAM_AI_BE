@@ -1,9 +1,12 @@
 package com.example.chillgram.domain.ai.service;
 
-import com.example.chillgram.domain.ai.dto.*;
-import lombok.RequiredArgsConstructor;
+import com.example.chillgram.domain.ai.dto.FinalCopyRequest;
+import com.example.chillgram.domain.ai.dto.FinalCopyResponse;
+import com.example.chillgram.domain.ai.dto.GuidelineRequest;
+import com.example.chillgram.domain.ai.dto.GuidelineResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -17,21 +20,24 @@ import java.util.regex.Pattern;
 @Slf4j
 @Service
 public class AdCopyService {
-    private final ChatClient.Builder chatClientBuilder;
+    private final ChatClient chatClient;
 
-    public AdCopyService(
-            org.springframework.beans.factory.ObjectProvider<ChatClient.Builder> chatClientBuilderProvider) {
-        this.chatClientBuilder = chatClientBuilderProvider.getIfAvailable();
+    public AdCopyService(ObjectProvider<ChatClient> chatClientProvider) {
+        this.chatClient = chatClientProvider.getIfAvailable();
+    }
+
+    private void checkAiEnabled() {
+        if (this.chatClient == null) {
+            log.error("========== AI 서비스 호출 시도 실패 ==========");
+            throw new IllegalStateException("현재 AI 서비스가 비활성화되어 있습니다. 설정(API Key 등)을 확인해주세요.");
+        }
     }
 
     /**
      * 1단계: 키워드 기반 가이드라인 5개 생성
      */
     public GuidelineResponse generateGuidelines(GuidelineRequest request) {
-        if (chatClientBuilder == null) {
-            throw new RuntimeException("AI 기능이 비활성화되어 있습니다. (API Key 누락)");
-        }
-        ChatClient chatClient = chatClientBuilder.build();
+        checkAiEnabled();
 
         String prompt = """
                 당신은 마케팅 전략가입니다.
@@ -59,10 +65,7 @@ public class AdCopyService {
      * 2단계: 가이드라인 기반 최종 카피 및 프롬프트 생성
      */
     public FinalCopyResponse generateFinalCopy(FinalCopyRequest request) {
-        if (chatClientBuilder == null) {
-            throw new RuntimeException("AI 기능이 비활성화되어 있습니다. (API Key 누락)");
-        }
-        ChatClient chatClient = chatClientBuilder.build();
+        checkAiEnabled();
 
         String prompt = """
                 당신은 전문 카피라이터이자 AI 이미지/비디오 프롬프트 엔지니어입니다.
