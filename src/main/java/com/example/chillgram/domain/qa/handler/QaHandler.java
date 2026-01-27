@@ -1,5 +1,6 @@
 package com.example.chillgram.domain.qa.handler;
 
+import com.example.chillgram.domain.qa.dto.QaAnswerCreateRequest;
 import com.example.chillgram.domain.qa.service.QaService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,6 +15,20 @@ import reactor.core.publisher.Mono;
 
 import java.util.Map;
 
+/**
+ * Q&A API 핸들러 (Controller 역할)
+ * 
+ * [처리 흐름]
+ * 1. Router로부터 ServerRequest(요청 정보)를 전달받음
+ * 2. 요청 본문(Body)이나 파라미터를 파싱(Parsing) 및 검증(Validation)
+ * 3. 비즈니스 로직 수행을 위해 Service 계층 호출 (qaService.method())
+ * 4. Service의 결과를 받아 ServerResponse(HTTP 응답)로 변환하여 반환
+ * 
+ * ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
+ * │ 프론트엔드 │ → │ QaRouter │ → │ QaHandler │
+ * │ (브라우저) │ │ (URL 매핑) │ │ (실제 처리) │
+ * └────────────────┘ └────────────────┘ └────────────────┘
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -21,30 +36,44 @@ public class QaHandler {
 
     private final QaService qaService;
 
+    // ============================================================================
+    // [POST] /api/v1/qs/questions - 질문 작성
+    // ============================================================================
+    // 입력: ServerRequest (multipart/form-data)
+    // - title: 질문 제목 (필수)
+    // - content: 질문 내용 (필수)
+    // - category: 카테고리 ID
+    // - companyId: 회사 ID
+    // - createdBy: 작성자 ID
+    // - file: 첨부파일 (선택)
+    // 출력: ServerResponse
+    // - 성공: 200 OK + QaWriteResponse (JSON)
+    // - 실패: 400 Bad Request + { "error": "메시지" }
+    // ============================================================================
     public Mono<ServerResponse> createQuestion(ServerRequest request) {
         return request.multipartData()
                 .flatMap(parts -> {
                     Map<String, Part> partMap = parts.toSingleValueMap();
 
-                    // 1. Extract Form Fields
+                    // 1. Form Field 추출
                     String title = getFormValue(partMap, "title");
                     String content = getFormValue(partMap, "content");
                     Long categoryId = parseLongSafe(getFormValue(partMap, "category"));
                     Long companyId = parseLongSafe(getFormValue(partMap, "companyId"));
                     Long createdBy = parseLongSafe(getFormValue(partMap, "createdBy"));
 
-                    // 2. Extract File (optional)
+                    // 2. 첨부파일 추출 (선택)
                     Part filePart = partMap.get("file");
                     FilePart file = (filePart instanceof FilePart) ? (FilePart) filePart : null;
 
-                    // 3. Validation
+                    // 3. 필수값 검증
                     if (title.isBlank() || content.isBlank()) {
                         return ServerResponse.badRequest()
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .bodyValue(Map.of("error", "Title and content are required"));
                     }
 
-                    // 4. Call Service and return response
+                    // 4. Service 호출 → 응답 반환
                     return qaService.createQuestion(title, content, categoryId, companyId, createdBy, file)
                             .flatMap(response -> ServerResponse.ok()
                                     .contentType(MediaType.APPLICATION_JSON)
@@ -58,13 +87,26 @@ public class QaHandler {
                 });
     }
 
+    // ============================================================================
+    // [GET] /api/v1/qs/questions - 목록 조회
+    // ============================================================================
+    // 입력: ServerRequest (Query Parameters)
+    // - page: 페이지 번호 (기본 0)
+    // - size: 페이지당 개수 (기본 10)
+    // - search: 검색어 (제목+내용 검색)
+    // - status: 상태 필터 (ALL, WAITING, ANSWERED)
+    // 출력: ServerResponse
+    // - 성공: 200 OK + Page<QaListResponse>
+    // - 실패: 400 Bad Request + { "error": "메시지" }
+    // ============================================================================
     public Mono<ServerResponse> getQuestionList(ServerRequest request) {
-        // Query Params Parsing
+        // Query Parameter 추출
         int page = Integer.parseInt(request.queryParam("page").orElse("0"));
         int size = Integer.parseInt(request.queryParam("size").orElse("10"));
         String search = request.queryParam("search").orElse(null);
         String status = request.queryParam("status").orElse("ALL");
 
+        // Service 호출 → 응답 반환
         return qaService.getQuestionList(page, size, search, status)
                 .flatMap(response -> ServerResponse.ok()
                         .contentType(MediaType.APPLICATION_JSON)
@@ -77,9 +119,20 @@ public class QaHandler {
                 });
     }
 
+    // ============================================================================
+    // [GET] /api/v1/qs/questions/{id} - 상세 조회
+    // ============================================================================
+    // 입력: ServerRequest (Path Variable)
+    // - id: 질문 ID
+    // 출력: ServerResponse
+    // - 성공: 200 OK + QaDetailResponse (질문 + 첨부파일 + 답변 목록)
+    // - 실패: 404 Not Found (질문이 존재하지 않을 때)
+    // ============================================================================
     public Mono<ServerResponse> getQuestionDetail(ServerRequest request) {
+        // Path Variable 추출
         Long questionId = Long.parseLong(request.pathVariable("id"));
 
+        // Service 호출 → 응답 반환
         return qaService.getQuestionDetail(questionId)
                 .flatMap(response -> ServerResponse.ok()
                         .contentType(MediaType.APPLICATION_JSON)
@@ -90,20 +143,33 @@ public class QaHandler {
                 });
     }
 
-    // ==================== 답변 작성 ====================
+    // ============================================================================
+    // [POST] /api/v1/qs/questions/{questionId}/answers - 답변 작성
+    // ============================================================================
+    // 입력: ServerRequest
+    // - Path Variable: questionId (질문 ID)
+    // - Body (JSON): { "body": "답변내용", "companyId": 5, "answeredBy": 99 }
+    // 출력: ServerResponse
+    // - 성공: 201 Created + QaAnswerResponse
+    // - 실패: 400 Bad Request + { "error": "메시지" }
+    // 부수 효과: 첫 답변 시 질문 상태를 WAITING → ANSWERED로 변경
+    // ============================================================================
     public Mono<ServerResponse> createAnswer(ServerRequest request) {
+        // Path Variable 추출
         Long questionId = Long.parseLong(request.pathVariable("questionId"));
 
-        return request.bodyToMono(AnswerRequest.class)
+        // Request Body 파싱 → 검증 → Service 호출
+        return request.bodyToMono(QaAnswerCreateRequest.class)
                 .flatMap(req -> {
-                    // Validation
-                    if (req.body == null || req.body.isBlank()) {
+                    // 필수값 검증
+                    if (req.getBody() == null || req.getBody().isBlank()) {
                         return ServerResponse.badRequest()
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .bodyValue(Map.of("error", "Answer body is required"));
                     }
 
-                    return qaService.createAnswer(questionId, req.body, req.companyId, req.answeredBy)
+                    // Service 호출 → 응답 반환
+                    return qaService.createAnswer(questionId, req.getBody(), req.getCompanyId(), req.getAnsweredBy())
                             .flatMap(response -> ServerResponse.status(201)
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .bodyValue(response));
@@ -116,13 +182,13 @@ public class QaHandler {
                 });
     }
 
-    // 답변 요청 DTO (내부 클래스)
-    private static class AnswerRequest {
-        public String body;
-        public Long companyId;
-        public Long answeredBy;
-    }
+    // ============================================================================
+    // 내부 클래스 및 유틸 메서드
+    // ============================================================================
 
+    /**
+     * Multipart Form에서 특정 필드 값 추출
+     */
     private String getFormValue(Map<String, Part> partMap, String key) {
         if (!partMap.containsKey(key)) {
             return "";
@@ -134,6 +200,9 @@ public class QaHandler {
         return "";
     }
 
+    /**
+     * 문자열을 Long으로 안전하게 파싱 (실패 시 null 반환)
+     */
     private Long parseLongSafe(String value) {
         try {
             return Long.parseLong(value);
