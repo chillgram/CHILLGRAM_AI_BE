@@ -16,7 +16,6 @@ import java.util.regex.Pattern;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class AdCopyService {
     private final ChatClient.Builder chatClientBuilder;
 
