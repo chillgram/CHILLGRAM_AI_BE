@@ -16,6 +16,18 @@ public enum ErrorCode {
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "인증이 필요합니다."),
     FORBIDDEN(HttpStatus.FORBIDDEN, "권한이 없습니다."),
 
+    // auth (401) - 로그인
+    INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED, "이메일 또는 비밀번호가 올바르지 않습니다."),
+
+    // auth (403) - 계정 상태
+    ACCOUNT_UNVERIFIED(HttpStatus.FORBIDDEN, "이메일 인증이 필요합니다."),
+    ACCOUNT_DORMANT(HttpStatus.FORBIDDEN, "휴면 계정입니다. 휴면 해제가 필요합니다."),
+    ACCOUNT_DELETED(HttpStatus.FORBIDDEN, "탈퇴 처리된 계정입니다."),
+
+    // auth (500) - 데이터 이상
+    ACCOUNT_STATUS_INVALID(HttpStatus.INTERNAL_SERVER_ERROR, "계정 상태를 확인할 수 없습니다. 잠시 후 다시 시도해주세요."),
+
+
     // 404/409
     NOT_FOUND(HttpStatus.NOT_FOUND, "리소스를 찾을 수 없습니다."),
     CONFLICT(HttpStatus.CONFLICT, "요청이 현재 상태와 충돌합니다."),

@@ -14,4 +14,6 @@ public interface AppUserRepository extends ReactiveCrudRepository<AppUser, Long>
         LIMIT 1
     """)
     Mono<AppUser> findByCompanyIdAndEmailIgnoreCase(Long companyId, String email);
+
+    Mono<AppUser> findByEmail(String email);
 }

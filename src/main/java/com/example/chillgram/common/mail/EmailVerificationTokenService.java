@@ -1,13 +1,17 @@
 package com.example.chillgram.common.mail;
 
+import com.example.chillgram.common.exception.ApiException;
+import com.example.chillgram.common.exception.ErrorCode;
 import com.example.chillgram.domain.auth.constant.AuthConst;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -44,43 +48,57 @@ public class EmailVerificationTokenService {
      * @return 발급된 토큰 정보(rawToken, tokenHash, verifyUrl)
      */
     public Mono<IssuedToken> issue(Long userId) {
+        if (userId == null || userId <= 0) {
+            return Mono.error(ApiException.of(ErrorCode.INVALID_REQUEST, "invalid userId=" + userId));
+        }
+
         // 이메일로 전달될 원문 토큰
         String raw = UUID.randomUUID() + "-" + UUID.randomUUID();
-        // Redis에는 원문이 아닌 해시를 키로 사용(
-        String hash = AuthConst.sha256HexSafe(raw);
+
+        // Redis 키는 해시 기반(원문 저장 금지)
+        String key = AuthConst.emailVerifyKeyByRawToken(raw);
+
         // 링크 안전성을 위해 URL 인코딩 후 baseUrl 뒤에 붙인다.
         String verifyUrl = verifyBaseUrl + URLEncoder.encode(raw, StandardCharsets.UTF_8);
 
-        // Redis: key(hash) -> value(userId), TTL 적용
         return redis.opsForValue()
-                .set(AuthConst.tokenKey(hash), String.valueOf(userId), AuthConst.EMAIL_TOKEN_TTL)
-                .thenReturn(new IssuedToken(raw, hash, verifyUrl));
+                .set(key, String.valueOf(userId), AuthConst.EMAIL_TOKEN_TTL)
+                .flatMap(ok -> Boolean.TRUE.equals(ok)
+                        ? Mono.just(new IssuedToken(raw, AuthConst.sha256Hex(raw), verifyUrl))
+                        : Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "failed to save verify token"))
+                );
     }
-
     /**
-     * 이메일 인증 토큰 1회성 소비.
-     * - 인증 링크 재사용 방지(Replay Attack 방어)
-     * - GET 요청이 들어오면 토큰을 조회하고 즉시 삭제
-     * 흐름:
-     * - raw token을 해시로 변환하여 Redis key를 만든다.
-     * - Redis에서 userId를 조회한다.
-     * - 조회 성공 시 즉시 삭제(delete) 후 userId를 반환한다.
-     * - 없으면(만료/위조/이미 사용) 에러로 처리한다.
-
-     * @param rawToken 이메일 링크로 전달된 토큰 원문
-     * @return 토큰에 매핑된 userId
+     * 이메일 인증 토큰 1회성 소비(원자적).
+     * - Lua로 GET + DEL을 한 번에 수행하여 재사용/중복소비 레이스 방지
      */
     public Mono<Long> consume(String rawToken) {
-        String hash = AuthConst.sha256HexSafe(rawToken);
-        String key = AuthConst.tokenKey(hash);
+        if (rawToken == null || rawToken.isBlank()) {
+            return Mono.error(ApiException.of(ErrorCode.INVALID_REQUEST, "rawToken is blank"));
+        }
 
-        return redis.opsForValue()
-                .get(key)
-                .switchIfEmpty(Mono.error(new IllegalArgumentException("토큰이 없거나 만료되었습니다.")))
-                // 조회 성공 시 즉시 삭제 후 userId 반환(1회성)
-                .flatMap(userIdStr ->
-                        redis.delete(key).thenReturn(Long.parseLong(userIdStr))
-                );
+        String key = AuthConst.emailVerifyKeyByRawToken(rawToken);
+
+        // Lua: val = GET key; if val then DEL key end; return val
+        RedisScript<String> getAndDel = RedisScript.of(
+                "local v = redis.call('GET', KEYS[1]); " +
+                        "if v then redis.call('DEL', KEYS[1]); end; " +
+                        "return v;",
+                String.class
+        );
+
+        return redis.execute(getAndDel, List.of(key))
+                .next() // script 결과 1개
+                .flatMap(userIdStr -> {
+                    if (userIdStr == null || userIdStr.isBlank()) {
+                        return Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "token not found or expired"));
+                    }
+                    try {
+                        return Mono.just(Long.parseLong(userIdStr));
+                    } catch (NumberFormatException e) {
+                        return Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "invalid token payload"));
+                    }
+                });
     }
 
     /**

@@ -1,31 +1,69 @@
 package com.example.chillgram.common.config;
 
+import com.example.chillgram.common.exception.ApiException;
+import com.example.chillgram.common.exception.ErrorCode;
+import com.example.chillgram.common.security.BearerTokenServerAuthenticationConverter;
+import com.example.chillgram.common.security.JwtAuthenticationManager;
+import com.example.chillgram.common.security.JwtProperties;
+import com.example.chillgram.common.security.JwtTokenService;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.ReactiveAuthenticationManager;
+import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.web.server.SecurityWebFilterChain;
+import org.springframework.security.web.server.authentication.AuthenticationWebFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
 
 @Configuration
+@EnableConfigurationProperties(JwtProperties.class)
 public class SecurityConfig {
 
     @Bean
-    public SecurityWebFilterChain springSecurityFilterChain(ServerHttpSecurity http) {
+    public JwtTokenService jwtTokenService(JwtProperties props) {
+        return new JwtTokenService(props);
+    }
+
+    @Bean
+    public ReactiveAuthenticationManager jwtAuthManager(JwtTokenService jwtTokenService) {
+        return new JwtAuthenticationManager(jwtTokenService);
+    }
+
+    @Bean
+    public SecurityWebFilterChain springSecurityFilterChain(ServerHttpSecurity http,
+                                                            ReactiveAuthenticationManager jwtAuthManager) {
+
+        AuthenticationWebFilter jwtWebFilter = new AuthenticationWebFilter(jwtAuthManager);
+        jwtWebFilter.setServerAuthenticationConverter(new BearerTokenServerAuthenticationConverter());
+
+        // Security 레벨에서 터지는 401도 ApiException으로 통일 (네 전역 예외처리로 내려가게)
+        jwtWebFilter.setAuthenticationFailureHandler((webFilterExchange, ex) ->
+                Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "authentication failed"))
+        );
+
         return http
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
-                .cors(cors -> {}) // Bean에서 공급
+                .cors(cors -> {}) // 아래 corsConfigurationSource Bean 사용
                 .authorizeExchange(ex -> ex
+                        // preflight
+                        .pathMatchers(HttpMethod.OPTIONS).permitAll()
                         .pathMatchers("/actuator/**").permitAll()
-                        .pathMatchers("/api/**").permitAll()
-                        .pathMatchers("/**").permitAll()
-                        .pathMatchers(HttpMethod.OPTIONS).permitAll() // preflight 통과
+                        .pathMatchers("/api/auth/**").permitAll()
+                        .pathMatchers(HttpMethod.GET, "/api/companies").permitAll() // 회원가입 시 회사목록
+
+                        // .pathMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
+
                         .anyExchange().authenticated()
                 )
+                // JWT 인증 필터를 chain에 추가
+                .addFilterAt(jwtWebFilter, SecurityWebFiltersOrder.AUTHENTICATION)
                 .build();
     }
 
@@ -33,7 +71,6 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        // React 개발 서버 / 운영 도메인으로 바꿔서 사용
         config.setAllowedOrigins(List.of(
                 "http://localhost:5173",
                 "http://127.0.0.1:5173"
@@ -41,11 +78,7 @@ public class SecurityConfig {
 
         config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
-
-        // JWT/쿠키 등 인증정보 (front)
         config.setAllowCredentials(true);
-
-        // 헤더노출
         config.setExposedHeaders(List.of("Authorization", "Location"));
         config.setMaxAge(3600L);
 
