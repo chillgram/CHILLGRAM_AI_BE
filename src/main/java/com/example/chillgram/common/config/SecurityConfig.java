@@ -9,6 +9,7 @@ import com.example.chillgram.common.security.JwtTokenService;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.ReactiveAuthenticationManager;
 import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
@@ -57,9 +58,7 @@ public class SecurityConfig {
                         .pathMatchers("/actuator/**").permitAll()
                         .pathMatchers("/api/auth/**").permitAll()
                         .pathMatchers(HttpMethod.GET, "/api/companies").permitAll() // 회원가입 시 회사목록
-
-                        // .pathMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
-
+                        .pathMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .anyExchange().authenticated()
                 )
                 // JWT 인증 필터를 chain에 추가
@@ -85,5 +84,29 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;
+    }
+
+    /**
+     * 운영: 문서 경로는 명시적으로 차단(이중 방어).
+     * springdoc enabled=false라도 실수/업그레이드로 노출되는 케이스를 원천 차단.
+     */
+    @Bean
+    @Profile("prod")
+    public SecurityWebFilterChain prodSecurityWebFilterChain(ServerHttpSecurity http) {
+        return http
+                .csrf(ServerHttpSecurity.CsrfSpec::disable)
+                .authorizeExchange(ex -> ex
+                        .pathMatchers(HttpMethod.OPTIONS).permitAll()
+
+                        // Swagger / OpenAPI (prod deny)
+                        .pathMatchers(
+                                "/v3/api-docs/**",
+                                "/swagger-ui.html",
+                                "/swagger-ui/**"
+                        ).denyAll()
+
+                        .anyExchange().authenticated()
+                )
+                .build();
     }
 }
