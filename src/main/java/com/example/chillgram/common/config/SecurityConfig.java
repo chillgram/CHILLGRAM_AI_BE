@@ -55,7 +55,8 @@ public class SecurityConfig {
                 .authorizeExchange(ex -> ex
                         // preflight
                         .pathMatchers(HttpMethod.OPTIONS).permitAll()
-                        .pathMatchers("/actuator/**").permitAll()
+                        .pathMatchers("/health").permitAll()
+                        .pathMatchers("/actuator/health", "/actuator/info").permitAll()
                         .pathMatchers("/api/auth/**").permitAll()
                         .pathMatchers(HttpMethod.GET, "/api/companies").permitAll() // 회원가입 시 회사목록
                         .pathMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
