@@ -1,0 +1,32 @@
+name: 🚀 Self-hosted Auto Deploy
+
+on:
+  push:
+    branches: [ "main" ]  # main 브랜치에 올릴 때만 실행
+
+jobs:
+  deploy:
+    runs-on: self-hosted  # 👈 서버에 심어둔 로봇(Runner)이 작동
+    
+    steps:
+      - name: 1. 최신 코드 가져오기
+        uses: actions/checkout@v3
+      
+      - name: 2. 환경변수 파일 생성 (.env)
+        # 깃허브 Secrets에 저장된 내용을 꺼내서 파일로 만듭니다.
+        run: echo "${{ secrets.ENV_FILE }}" > .env
+
+      - name: 3. Docker Compose 재실행
+        run: |
+          echo "🔥 기존 서버 종료..."
+          # (-f): 설정 파일은 '/home/hcoh990310/'에 있는 걸 씁니다.
+          sudo docker compose -f /home/hcoh990310/docker-compose.yml down
+          
+          echo "🏗️ 새로 빌드하고 시작..."
+          # [핵심] 설정 파일(-f)은 홈 디렉토리를 보지만, 
+          # 빌드 위치(--project-directory)는 '지금 여기(소스코드 폴더)'로 지정합니다.
+          # 이걸 해야 gradlew를 찾을 수 있고, 빌드가 빨라집니다.
+          sudo docker compose -f /home/hcoh990310/docker-compose.yml --project-directory . up -d --build
+          
+          echo "🧹 불필요한 이미지 청소..."
+          sudo docker image prune -f
