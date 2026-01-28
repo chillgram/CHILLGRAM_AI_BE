@@ -1,0 +1,29 @@
+name: 🚀 Self-hosted Auto Deploy
+
+on:
+  push:
+    branches: [ "main" ]  # main 브랜치에 올릴 때만 실행
+
+jobs:
+  deploy:
+    runs-on: self-hosted  # 👈 [핵심] 아까 서버에 심은 로봇이 작동합니다!
+    
+    steps:
+      - name: 1. 최신 코드 가져오기
+        uses: actions/checkout@v3
+      
+      - name: 2. 환경변수 파일 생성 (.env)
+        # 깃허브 Secrets(ENV_FILE)에 저장된 내용을 꺼내서 서버에 .env 파일을 만듭니다.
+        # (주의: 깃허브 Settings -> Secrets에 'ENV_FILE'이 등록되어 있어야 함!)
+        run: echo "${{ secrets.ENV_FILE }}" > .env
+
+      - name: 3. Docker Compose 재실행
+        run: |
+          echo "🔥 기존 서버 종료..."
+          sudo docker compose down
+          
+          echo "🏗️ 새로 빌드하고 시작..."
+          sudo docker compose up -d --build
+          
+          echo "🧹 불필요한 이미지 청소..."
+          sudo docker image prune -f
