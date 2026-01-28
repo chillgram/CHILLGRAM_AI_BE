@@ -329,6 +329,7 @@ curl -X POST http://localhost:8080/api/v1/generate-copy \
 | 7 | 테스트 | - | - | 10분 |
 
 **총: 60분 + 7커밋**
+## 도커 테스트
 
 ---
 
