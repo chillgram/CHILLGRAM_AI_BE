@@ -9,7 +9,7 @@ import com.example.chillgram.common.security.JwtTokenService;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Profile;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.ReactiveAuthenticationManager;
 import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
@@ -38,31 +38,38 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityWebFilterChain springSecurityFilterChain(ServerHttpSecurity http,
-                                                            ReactiveAuthenticationManager jwtAuthManager) {
-
+    public SecurityWebFilterChain springSecurityFilterChain(
+            ServerHttpSecurity http,
+            ReactiveAuthenticationManager jwtAuthManager,
+            Environment env
+    ) {
         AuthenticationWebFilter jwtWebFilter = new AuthenticationWebFilter(jwtAuthManager);
         jwtWebFilter.setServerAuthenticationConverter(new BearerTokenServerAuthenticationConverter());
 
-        // Security 레벨에서 터지는 401도 ApiException으로 통일 (네 전역 예외처리로 내려가게)
         jwtWebFilter.setAuthenticationFailureHandler((webFilterExchange, ex) ->
                 Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "authentication failed"))
         );
 
+        boolean isProd = List.of(env.getActiveProfiles()).contains("prod");
+
         return http
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
-                .cors(cors -> {}) // 아래 corsConfigurationSource Bean 사용
-                .authorizeExchange(ex -> ex
-                        // preflight
-                        .pathMatchers(HttpMethod.OPTIONS).permitAll()
-                        .pathMatchers("/health").permitAll()
-                        .pathMatchers("/actuator/health", "/actuator/info").permitAll()
-                        .pathMatchers("/api/auth/**").permitAll()
-                        .pathMatchers(HttpMethod.GET, "/api/companies").permitAll() // 회원가입 시 회사목록
-                        .pathMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                        .anyExchange().authenticated()
-                )
-                // JWT 인증 필터를 chain에 추가
+                .cors(cors -> {}) // corsConfigurationSource Bean 사용
+                .authorizeExchange(ex -> {
+                    ex.pathMatchers(HttpMethod.OPTIONS).permitAll();
+                    ex.pathMatchers("/health").permitAll();
+                    ex.pathMatchers("/actuator/health", "/actuator/info").permitAll();
+                    ex.pathMatchers("/api/auth/**").permitAll();
+                    ex.pathMatchers(HttpMethod.GET, "/api/companies").permitAll();
+
+                    if (isProd) {
+                        ex.pathMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").denyAll();
+                    } else {
+                        ex.pathMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll();
+                    }
+
+                    ex.anyExchange().authenticated();
+                })
                 .addFilterAt(jwtWebFilter, SecurityWebFiltersOrder.AUTHENTICATION)
                 .build();
     }
@@ -70,12 +77,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-
-        config.setAllowedOrigins(List.of(
-                "http://localhost:5173",
-                "http://127.0.0.1:5173"
-        ));
-
+        config.setAllowedOrigins(List.of("http://localhost:5173", "http://127.0.0.1:5173"));
         config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
@@ -85,29 +87,5 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;
-    }
-
-    /**
-     * 운영: 문서 경로는 명시적으로 차단(이중 방어).
-     * springdoc enabled=false라도 실수/업그레이드로 노출되는 케이스를 원천 차단.
-     */
-    @Bean
-    @Profile("prod")
-    public SecurityWebFilterChain prodSecurityWebFilterChain(ServerHttpSecurity http) {
-        return http
-                .csrf(ServerHttpSecurity.CsrfSpec::disable)
-                .authorizeExchange(ex -> ex
-                        .pathMatchers(HttpMethod.OPTIONS).permitAll()
-
-                        // Swagger / OpenAPI (prod deny)
-                        .pathMatchers(
-                                "/v3/api-docs/**",
-                                "/swagger-ui.html",
-                                "/swagger-ui/**"
-                        ).denyAll()
-
-                        .anyExchange().authenticated()
-                )
-                .build();
     }
 }

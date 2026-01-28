@@ -9,6 +9,9 @@ import com.example.chillgram.domain.auth.dto.*;
 import com.example.chillgram.domain.auth.service.SignupService;
 import com.example.chillgram.domain.user.repository.AppUserRepository;
 import com.networknt.schema.utils.Strings;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpCookie;
 import org.springframework.http.ResponseCookie;
@@ -21,10 +24,9 @@ import reactor.core.publisher.Mono;
 import java.time.Duration;
 
 /**
- * 인증(Auth) 관련 API 엔드포인트를 제공하는 컨트롤러
- * - 회원가입 요청을 받아 가입 프로세스를 시작
- * - 이메일 인증 토큰을 검증하여 이메일 인증을 완료
+ * 인증(Auth) 관련 API 엔드포인트
  */
+@Tag(name = "Auth", description = "회원 인증 및 토큰(JWT) 관리 API")
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
@@ -49,6 +51,15 @@ public class AuthController {
         this.signupService = signupService;
     }
 
+    @SecurityRequirements
+    @Operation(
+            summary = "로그인",
+            description = """
+                    이메일과 비밀번호로 로그인하고 Access Token을 발급합니다.
+                    Refresh Token은 HttpOnly Cookie로 설정됩니다.
+                    (계정 존재 여부 노출 방지 정책 적용)
+                    """
+    )
     @PostMapping("/login")
     public Mono<TokenResponse> login(@RequestBody LoginRequest req, ServerHttpResponse response) {
         if (req == null || Strings.isBlank(req.email()) || Strings.isBlank(req.password())) {
@@ -58,21 +69,17 @@ public class AuthController {
         String email = AuthConst.normalizeEmail(req.email());
 
         return userRepository.findByEmail(email)
-                // 계정 없음도 동일하게 처리(계정 존재 유추 방지)
                 .switchIfEmpty(Mono.error(invalidCredentials()))
                 .flatMap(u -> {
-                    // 계정 상태 체크
                     ErrorCode statusError = mapStatusToLoginError(u.getStatus());
                     if (statusError != null) {
                         return Mono.error(ApiException.of(statusError, "로그인 차단: 계정 상태=" + u.getStatus()));
                     }
 
-                    // 비밀번호 체크
                     if (!passwordEncoder.matches(req.password(), u.getPasswordHash())) {
                         return Mono.error(invalidCredentials());
                     }
 
-                    // 토큰 발급 + refresh 저장 + 쿠키 설정
                     long userId = u.getUserId();
                     String role = normalizeRole(u.getRole());
 
@@ -88,18 +95,14 @@ public class AuthController {
 
     private record IssuedTokens(String access, String refresh) {}
 
-    private void setRefreshCookie(ServerHttpResponse response, String refreshToken) {
-        ResponseCookie cookie = ResponseCookie.from("refresh_token", refreshToken)
-                .httpOnly(true)
-                .secure(false) // 로컬 개발이면 false, 운영 HTTPS면 true
-                .sameSite("Lax") // SPA + API 분리면 보통 Lax 또는 None(단 None이면 Secure 필수)
-                .path("/api/auth") // refresh/logout 범위만
-                .maxAge(Duration.ofDays(14))
-                .build();
-
-        response.addCookie(cookie);
-    }
-
+    @SecurityRequirements
+    @Operation(
+            summary = "Access Token 재발급",
+            description = """
+                    Refresh Token 쿠키를 검증하여 새로운 Access Token을 발급합니다.
+                    Refresh Token은 서버 저장값과 매칭하여 폐기 여부를 확인합니다.
+                    """
+    )
     @PostMapping("/refresh")
     public Mono<TokenResponse> refresh(ServerWebExchange exchange) {
         String refreshToken = extractRefreshCookie(exchange);
@@ -124,16 +127,17 @@ public class AuthController {
                 });
     }
 
-    private String extractRefreshCookie(ServerWebExchange exchange) {
-        HttpCookie c = exchange.getRequest().getCookies().getFirst("refresh_token");
-        return (c == null) ? null : c.getValue();
-    }
-
+    @Operation(
+            summary = "로그아웃",
+            description = """
+                    Refresh Token 쿠키를 만료시키고 서버 저장소에서 토큰을 제거합니다.
+                    Access Token은 클라이언트에서 폐기 처리합니다.
+                    """
+    )
     @PostMapping("/logout")
     public Mono<Void> logout(ServerWebExchange exchange, ServerHttpResponse response) {
         String refreshToken = extractRefreshCookie(exchange);
 
-        // 쿠키 삭제(만료)
         ResponseCookie delete = ResponseCookie.from("refresh_token", "")
                 .httpOnly(true)
                 .secure(false)
@@ -153,30 +157,49 @@ public class AuthController {
                 .then();
     }
 
-    /**
-     * 회원가입 요청 API.
-     * 보안 목적: "계정 존재 여부 노출 방지"
-     * - 가입이 실제로 처리되었는지/이미 존재하는 이메일인지 등 내부 상태를 응답으로 구분하지 않고
-     *   항상 동일한 메시지를 반환하여 사용자 열거(Enumeration) 공격을 어렵게 만든다.
-     */
+    @SecurityRequirements
+    @Operation(
+            summary = "회원가입 요청",
+            description = """
+                    회원가입 요청을 처리하고 이메일 인증을 시작합니다.
+                    보안상 계정 존재 여부와 관계없이 동일한 응답 메시지를 반환합니다.
+                    """
+    )
     @PostMapping("/signup")
     public Mono<ApiMessage> signup(@Valid @RequestBody SignupRequest req) {
-        // 계정 존재 여부 노출 방지: 항상 같은 메시지
-        return signupService.signup(req).thenReturn(new ApiMessage("인증 메일을 전송했습니다. 메일함을 확인해주세요."));
+        return signupService.signup(req)
+                .thenReturn(new ApiMessage("인증 메일을 전송했습니다. 메일함을 확인해주세요."));
     }
 
-    /**
-     * 이메일 인증 완료 API.
-     * - 사용자가 이메일 링크를 클릭했을 때 호출되는 엔드포인트를 가정한다.
-     * - token 파라미터를 받아 서비스에서 유효성 검증/만료 확인/사용 처리 등을 수행한다.
-     */
+    @SecurityRequirements
+    @Operation(
+            summary = "이메일 인증 완료",
+            description = """
+                    이메일로 전달된 인증 토큰을 검증하여 계정을 활성화합니다.
+                    """
+    )
     @GetMapping("/verify-email")
     public Mono<ApiMessage> verifyEmail(@RequestParam("token") String token) {
         return signupService.verifyEmail(token)
                 .thenReturn(new ApiMessage("이메일 인증이 완료되었습니다."));
     }
 
-    /** 로그인 실패(계정 없음/비번 불일치) 공통 에러 */
+    private void setRefreshCookie(ServerHttpResponse response, String refreshToken) {
+        ResponseCookie cookie = ResponseCookie.from("refresh_token", refreshToken)
+                .httpOnly(true)
+                .secure(false)
+                .sameSite("Lax")
+                .path("/api/auth")
+                .maxAge(Duration.ofDays(14))
+                .build();
+        response.addCookie(cookie);
+    }
+
+    private String extractRefreshCookie(ServerWebExchange exchange) {
+        HttpCookie c = exchange.getRequest().getCookies().getFirst("refresh_token");
+        return (c == null) ? null : c.getValue();
+    }
+
     private ApiException invalidCredentials() {
         return ApiException.of(
                 ErrorCode.INVALID_CREDENTIALS,
@@ -184,10 +207,6 @@ public class AuthController {
         );
     }
 
-    /**
-     * 로그인에서 계정 상태에 따른 에러 코드 매핑
-     * - 정상(VERIFIED)이면 null 반환
-     */
     private ErrorCode mapStatusToLoginError(Integer status) {
         if (status == null) return ErrorCode.ACCOUNT_STATUS_INVALID;
 
