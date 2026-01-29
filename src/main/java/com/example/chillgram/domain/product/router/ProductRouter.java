@@ -15,7 +15,7 @@ public class ProductRouter {
     @Bean
     public RouterFunction<ServerResponse> productRoutes(ProductHandler productHandler) {
         return RouterFunctions.route()
-                .path("/api/v1/products", builder -> builder
+                .path("/api/products", builder -> builder
                         // ==========================================
                         // [GET] /stats - 대시보드 통계
                         // ------------------------------------------
