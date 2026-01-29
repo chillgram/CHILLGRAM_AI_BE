@@ -54,4 +54,27 @@ public class Product {
 
     @Column("updated_at")
     private LocalDateTime updatedAt;
+
+    /**
+     * 엔티티 필드 업데이트 (null이 아닌 값만 반영)
+     */
+    public Product update(com.example.chillgram.domain.product.dto.ProductUpdateRequest request) {
+        if (request.getName() != null) {
+            this.name = request.getName();
+        }
+        if (request.getCategory() != null) {
+            this.category = request.getCategory();
+        }
+        if (request.getDescription() != null) {
+            this.description = request.getDescription();
+        }
+        if (request.getPrice() != null) {
+            this.price = request.getPrice();
+        }
+        if (request.getIsActive() != null) {
+            this.isActive = request.getIsActive();
+        }
+        this.updatedAt = LocalDateTime.now();
+        return this;
+    }
 }

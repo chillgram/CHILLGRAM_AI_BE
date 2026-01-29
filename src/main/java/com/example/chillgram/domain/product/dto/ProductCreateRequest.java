@@ -1,0 +1,65 @@
+package com.example.chillgram.domain.product.dto;
+
+import com.example.chillgram.domain.product.entity.Product;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+
+/**
+ * 제품 등록 요청 DTO
+ * POST /api/products
+ */
+@Getter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ProductCreateRequest {
+
+    /**
+     * 제품명 (필수)
+     */
+    @NotBlank(message = "제품명은 필수입니다")
+    private String name;
+
+    /**
+     * 카테고리 (선택)
+     */
+    private String category;
+
+    /**
+     * 제품 설명 (선택)
+     */
+    private String description;
+
+    /**
+     * 가격 (필수)
+     */
+    @NotNull(message = "가격은 필수입니다")
+    private BigDecimal price;
+
+    /**
+     * 활성화 여부 (기본값: true)
+     */
+    @Builder.Default
+    private Boolean isActive = true;
+
+    /**
+     * DTO -> Entity 변환
+     */
+    public Product toEntity(Long companyId, String createdBy) {
+        return Product.builder()
+                .companyId(companyId)
+                .name(this.name)
+                .category(this.category)
+                .description(this.description)
+                .price(this.price)
+                .isActive(this.isActive != null ? this.isActive : true)
+                .createdBy(createdBy)
+                .build();
+    }
+}

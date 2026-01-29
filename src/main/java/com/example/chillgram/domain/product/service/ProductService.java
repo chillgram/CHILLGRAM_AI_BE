@@ -1,7 +1,9 @@
 package com.example.chillgram.domain.product.service;
 
+import com.example.chillgram.domain.product.dto.ProductCreateRequest;
 import com.example.chillgram.domain.product.dto.ProductDashboardStats;
 import com.example.chillgram.domain.product.dto.ProductResponse;
+import com.example.chillgram.domain.product.dto.ProductUpdateRequest;
 import com.example.chillgram.domain.product.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -74,5 +76,52 @@ public class ProductService {
                                 .map(ProductResponse::from)
                                 .switchIfEmpty(Mono.error(
                                                 new IllegalArgumentException("Product not found with id: " + id)));
+        }
+
+        // ==========================================
+        // CUD Operations
+        // ==========================================
+
+        /**
+         * 제품 등록
+         * POST /api/products
+         */
+        @Transactional
+        public Mono<ProductResponse> createProduct(ProductCreateRequest request) {
+                // TODO: SecurityContext에서 companyId, createdBy 추출
+                Long companyId = 1L;
+                String createdBy = "admin";
+
+                return productRepository.save(request.toEntity(companyId, createdBy))
+                                .map(ProductResponse::from)
+                                .doOnSuccess(product -> log.info("Product created: {}", product.getId()));
+        }
+
+        /**
+         * 제품 수정
+         * PUT /api/products/{id}
+         */
+        @Transactional
+        public Mono<ProductResponse> updateProduct(Long id, ProductUpdateRequest request) {
+                return productRepository.findById(id)
+                                .switchIfEmpty(Mono.error(
+                                                new IllegalArgumentException("Product not found with id: " + id)))
+                                .map(product -> product.update(request))
+                                .flatMap(productRepository::save)
+                                .map(ProductResponse::from)
+                                .doOnSuccess(product -> log.info("Product updated: {}", product.getId()));
+        }
+
+        /**
+         * 제품 삭제
+         * DELETE /api/products/{id}
+         */
+        @Transactional
+        public Mono<Void> deleteProduct(Long id) {
+                return productRepository.findById(id)
+                                .switchIfEmpty(Mono.error(
+                                                new IllegalArgumentException("Product not found with id: " + id)))
+                                .flatMap(product -> productRepository.deleteById(id))
+                                .doOnSuccess(v -> log.info("Product deleted: {}", id));
         }
 }

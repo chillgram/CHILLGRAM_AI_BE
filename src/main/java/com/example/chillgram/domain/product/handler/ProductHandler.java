@@ -1,5 +1,7 @@
 package com.example.chillgram.domain.product.handler;
 
+import com.example.chillgram.domain.product.dto.ProductCreateRequest;
+import com.example.chillgram.domain.product.dto.ProductUpdateRequest;
 import com.example.chillgram.domain.product.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +12,7 @@ import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
+import java.net.URI;
 import java.util.Map;
 
 @Component
@@ -20,7 +23,7 @@ public class ProductHandler {
     private final ProductService productService;
 
     /**
-     * [GET] /api/v1/products/stats
+     * [GET] /api/products/stats
      * 대시보드 통계 조회
      *
      * [Flow]
@@ -35,7 +38,7 @@ public class ProductHandler {
     }
 
     /**
-     * [GET] /api/v1/products
+     * [GET] /api/products
      * 제품 목록 조회 (검색, 페이징)
      *
      * [Flow]
@@ -65,7 +68,7 @@ public class ProductHandler {
     }
 
     /**
-     * [GET] /api/v1/products/{id}
+     * [GET] /api/products/{id}
      * 제품 상세 조회
      *
      * [Flow]
@@ -86,6 +89,82 @@ public class ProductHandler {
         return productService.getProductDetail(id)
                 .flatMap(product -> ServerResponse.ok().bodyValue(product))
                 .switchIfEmpty(ServerResponse.notFound().build())
+                .onErrorResume(IllegalArgumentException.class, e -> ServerResponse.notFound().build());
+    }
+
+    // ==========================================
+    // CUD Operations
+    // ==========================================
+
+    /**
+     * [POST] /api/products
+     * 제품 등록
+     *
+     * [Flow]
+     * 1. Request Body: ProductCreateRequest (JSON)
+     * 2. Service: createProduct() 호출
+     * 3. Response: 201 Created + ProductResponse + Location Header
+     */
+    public Mono<ServerResponse> createProduct(ServerRequest request) {
+        return request.bodyToMono(ProductCreateRequest.class)
+                .flatMap(productService::createProduct)
+                .flatMap(product -> ServerResponse
+                        .created(URI.create("/api/products/" + product.getId()))
+                        .bodyValue(product))
+                .onErrorResume(e -> {
+                    log.error("Failed to create product", e);
+                    return ServerResponse.badRequest()
+                            .bodyValue(Map.of("error", e.getMessage()));
+                });
+    }
+
+    /**
+     * [PUT] /api/products/{id}
+     * 제품 수정
+     *
+     * [Flow]
+     * 1. Path Variable: id
+     * 2. Request Body: ProductUpdateRequest (JSON)
+     * 3. Service: updateProduct(id, request) 호출
+     * 4. Response:
+     * - Success: 200 OK + ProductResponse
+     * - Fail: 404 Not Found (if ID not exists)
+     */
+    public Mono<ServerResponse> updateProduct(ServerRequest request) {
+        long id;
+        try {
+            id = Long.parseLong(request.pathVariable("id"));
+        } catch (NumberFormatException e) {
+            return ServerResponse.badRequest().bodyValue(Map.of("error", "Invalid product ID"));
+        }
+
+        return request.bodyToMono(ProductUpdateRequest.class)
+                .flatMap(updateRequest -> productService.updateProduct(id, updateRequest))
+                .flatMap(product -> ServerResponse.ok().bodyValue(product))
+                .onErrorResume(IllegalArgumentException.class, e -> ServerResponse.notFound().build());
+    }
+
+    /**
+     * [DELETE] /api/products/{id}
+     * 제품 삭제
+     *
+     * [Flow]
+     * 1. Path Variable: id
+     * 2. Service: deleteProduct(id) 호출
+     * 3. Response:
+     * - Success: 204 No Content
+     * - Fail: 404 Not Found (if ID not exists)
+     */
+    public Mono<ServerResponse> deleteProduct(ServerRequest request) {
+        long id;
+        try {
+            id = Long.parseLong(request.pathVariable("id"));
+        } catch (NumberFormatException e) {
+            return ServerResponse.badRequest().bodyValue(Map.of("error", "Invalid product ID"));
+        }
+
+        return productService.deleteProduct(id)
+                .then(ServerResponse.noContent().build())
                 .onErrorResume(IllegalArgumentException.class, e -> ServerResponse.notFound().build());
     }
 }
