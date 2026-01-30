@@ -41,26 +41,29 @@ public class SecurityConfig {
     public SecurityWebFilterChain springSecurityFilterChain(
             ServerHttpSecurity http,
             ReactiveAuthenticationManager jwtAuthManager,
-            Environment env
-    ) {
+            Environment env) {
         AuthenticationWebFilter jwtWebFilter = new AuthenticationWebFilter(jwtAuthManager);
         jwtWebFilter.setServerAuthenticationConverter(new BearerTokenServerAuthenticationConverter());
 
-        jwtWebFilter.setAuthenticationFailureHandler((webFilterExchange, ex) ->
-                Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "authentication failed"))
-        );
+        jwtWebFilter.setAuthenticationFailureHandler((webFilterExchange, ex) -> Mono
+                .error(ApiException.of(ErrorCode.UNAUTHORIZED, "authentication failed")));
 
         boolean isProd = List.of(env.getActiveProfiles()).contains("prod");
 
         return http
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
-                .cors(cors -> {}) // corsConfigurationSource Bean 사용
+                .cors(cors -> {
+                }) // corsConfigurationSource Bean 사용
                 .authorizeExchange(ex -> {
                     ex.pathMatchers(HttpMethod.OPTIONS).permitAll();
                     ex.pathMatchers("/health").permitAll();
                     ex.pathMatchers("/actuator/health", "/actuator/info").permitAll();
                     ex.pathMatchers("/api/auth/**").permitAll();
                     ex.pathMatchers(HttpMethod.GET, "/api/companies").permitAll();
+
+                    // Q&A 조회 API 공개 (질문 목록, 질문 상세)
+                    ex.pathMatchers(HttpMethod.GET, "/api/qs/questions").permitAll();
+                    ex.pathMatchers(HttpMethod.GET, "/api/qs/questions/**").permitAll();
 
                     if (isProd) {
                         ex.pathMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").denyAll();
@@ -78,7 +81,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(List.of("http://localhost:5173", "http://127.0.0.1:5173"));
-        config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);
         config.setExposedHeaders(List.of("Authorization", "Location"));
