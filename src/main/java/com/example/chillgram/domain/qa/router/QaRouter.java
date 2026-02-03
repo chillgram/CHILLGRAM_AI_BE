@@ -2,7 +2,6 @@ package com.example.chillgram.domain.qa.router;
 
 import com.example.chillgram.domain.qa.dto.QaAnswerCreateRequest;
 import com.example.chillgram.domain.qa.dto.QaAnswerUpdateRequest;
-import com.example.chillgram.domain.qa.dto.QaQuestionUpdateRequest;
 import com.example.chillgram.domain.qa.handler.QaHandler;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;

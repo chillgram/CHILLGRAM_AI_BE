@@ -37,7 +37,8 @@ public class QaService {
         private final QaQuestionAttachmentRepository qaQuestionAttachmentRepository;
         private final QaAnswerRepository qaAnswerRepository; // 추가됨
 
-        private static final String UPLOAD_DIR = "src/main/resources/static/qna/";
+        // Docker/서버 환경을 고려한 외부 절대 경로
+        private static final String UPLOAD_DIR = "/app/uploads/qna/";
 
         // ==================== 목록 조회 ====================
         @Transactional(readOnly = true)

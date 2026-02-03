@@ -81,7 +81,7 @@ public class QaHandler {
 
                                 // 1. Form Field 추출
                                 String title = getFormValue(partMap, "title");
-                                String content = getFormValue(partMap, "content");
+                                String content = getFormValue(partMap, "body"); // 프론트: body
 
                                 // 기본값 1L 설정 (FK 에러 방지)
                                 Long categoryId = parseLongSafe(getFormValue(partMap, "category"));
