@@ -17,7 +17,9 @@ public class ProductResponse {
     private String description;
     private BigDecimal price;
     private Boolean isActive;
-    private String createdBy;
+    private Long createdBy;
+    private String createdByName; // Added for enrichment
+    private String companyName; // Added for enrichment
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -31,6 +33,7 @@ public class ProductResponse {
                 .price(product.getPrice())
                 .isActive(product.getIsActive())
                 .createdBy(product.getCreatedBy())
+                // createdByName and companyName should be set by the service
                 .createdAt(product.getCreatedAt())
                 .updatedAt(product.getUpdatedAt())
                 .build();

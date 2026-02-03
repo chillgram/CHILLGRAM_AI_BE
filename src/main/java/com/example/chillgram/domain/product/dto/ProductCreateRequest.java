@@ -51,7 +51,7 @@ public class ProductCreateRequest {
     /**
      * DTO -> Entity 변환
      */
-    public Product toEntity(Long companyId, String createdBy) {
+    public Product toEntity(Long companyId, Long createdBy) {
         return Product.builder()
                 .companyId(companyId)
                 .name(this.name)

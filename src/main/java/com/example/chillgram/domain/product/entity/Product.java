@@ -46,7 +46,7 @@ public class Product {
 
     @CreatedBy
     @Column("created_by")
-    private String createdBy;
+    private Long createdBy;
 
     @CreatedDate
     @Column("created_at")

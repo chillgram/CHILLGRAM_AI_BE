@@ -77,7 +77,7 @@ class ProductRouteTest {
                                 .category("FOOD")
                                 .companyId(10L)
                                 .isActive(true)
-                                .createdBy("user1")
+                                .createdBy(1L)
                                 .createdAt(LocalDateTime.now())
                                 .updatedAt(LocalDateTime.now())
                                 .build();

@@ -92,22 +92,29 @@ public class ProductHandler {
                 .onErrorResume(IllegalArgumentException.class, e -> ServerResponse.notFound().build());
     }
 
-    // ==========================================
-    // CUD Operations
-    // ==========================================
-
     /**
      * [POST] /api/products
      * 제품 등록
      *
      * [Flow]
      * 1. Request Body: ProductCreateRequest (JSON)
-     * 2. Service: createProduct() 호출
-     * 3. Response: 201 Created + ProductResponse + Location Header
+     * 2. Extract userId from JWT principal
+     * 3. Service: createProduct() 호출 (userId로 companyId 자동 조회)
+     * 4. Response: 201 Created + ProductResponse + Location Header
      */
     public Mono<ServerResponse> createProduct(ServerRequest request) {
-        return request.bodyToMono(ProductCreateRequest.class)
-                .flatMap(productService::createProduct)
+        // JWT에서 userId 추출
+        Mono<Long> userIdMono = request.principal()
+                .map(principal -> {
+                    if (principal instanceof org.springframework.security.authentication.UsernamePasswordAuthenticationToken auth) {
+                        return (Long) auth.getPrincipal();
+                    }
+                    throw new IllegalStateException("인증 정보가 올바르지 않습니다.");
+                });
+
+        return userIdMono
+                .flatMap(userId -> request.bodyToMono(ProductCreateRequest.class)
+                        .flatMap(createRequest -> productService.createProduct(createRequest, userId)))
                 .flatMap(product -> ServerResponse
                         .created(URI.create("/api/products/" + product.getId()))
                         .bodyValue(product))
