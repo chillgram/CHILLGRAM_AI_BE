@@ -230,7 +230,7 @@ public class QaService {
         // ==================== 질문 수정 ====================
         @Transactional
         public Mono<QaWriteResponse> updateQuestion(Long questionId, String title, String content,
-                        Long categoryId, Long userId, FilePart filePart) {
+                        Long categoryId, String status, Long userId, FilePart filePart) {
                 return qaQuestionRepository.findById(questionId)
                                 .switchIfEmpty(Mono.error(
                                                 com.example.chillgram.common.exception.ApiException.of(
@@ -249,6 +249,10 @@ public class QaService {
                                         Long finalCategoryId = categoryId != null ? categoryId
                                                         : question.getCategoryId();
 
+                                        // status가 null이거나 비어있으면 기존값 유지
+                                        String finalStatus = (status != null && !status.isBlank()) ? status
+                                                        : question.getStatus();
+
                                         // 수정된 질문 생성 (R2DBC는 불변 객체)
                                         QaQuestion updatedQuestion = QaQuestion.builder()
                                                         .questionId(question.getQuestionId())
@@ -257,7 +261,7 @@ public class QaService {
                                                         .createdBy(question.getCreatedBy())
                                                         .title(title)
                                                         .body(content)
-                                                        .status(question.getStatus())
+                                                        .status(finalStatus) // 상태 변경 적용
                                                         .viewCount(question.getViewCount())
                                                         .createdAt(question.getCreatedAt())
                                                         .updatedAt(java.time.LocalDateTime.now()) // 수정 시간 갱신
@@ -313,4 +317,5 @@ public class QaService {
                                 .doOnSuccess(resp -> log.info("Answer updated: id={}", answerId))
                                 .doOnError(e -> log.error("Failed to update answer", e));
         }
+
 }

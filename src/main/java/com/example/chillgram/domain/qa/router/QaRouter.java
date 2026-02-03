@@ -50,7 +50,7 @@ public class QaRouter {
                         // 4. 질문 수정 (Multipart)
                         @RouterOperation(path = "/api/qs/questions/{questionId}", method = RequestMethod.PUT, beanClass = QaHandler.class, beanMethod = "updateQuestion", operation = @Operation(summary = "질문 수정", description = "질문의 제목, 내용, 카테고리를 수정합니다. 파일 첨부 가능. 본인만 수정 가능.", tags = "QA", parameters = {
                                         @Parameter(name = "questionId", description = "질문 ID", in = ParameterIn.PATH)
-                        }, requestBody = @RequestBody(content = @Content(mediaType = MediaType.MULTIPART_FORM_DATA_VALUE, schema = @Schema(type = "object", description = "title, content, category(선택), file(선택)"))))),
+                        }, requestBody = @RequestBody(content = @Content(mediaType = MediaType.MULTIPART_FORM_DATA_VALUE, schema = @Schema(type = "object", description = "title, content, category(선택), status(선택), file(선택)"))))),
 
                         // 5. 답변 등록
                         @RouterOperation(path = "/api/qs/questions/{questionId}/answers", method = RequestMethod.POST, beanClass = QaHandler.class, beanMethod = "createAnswer", operation = @Operation(summary = "답변 등록", description = "질문에 대한 답변을 등록합니다.", tags = "QA", parameters = {

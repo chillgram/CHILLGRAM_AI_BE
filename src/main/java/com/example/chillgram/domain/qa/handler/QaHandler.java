@@ -271,14 +271,16 @@ public class QaHandler {
     }
 
     // ============================================================================
-    // [PUT] /api/qs/questions/{questionId} - 질문 수정 (Multipart)
-    // - title: 수정할 제목
-    // - content: 수정할 내용
-    // - category: 카테고리 ID (선택)
-    // - file: 첨부파일 (선택)
+    // [PUT] /api/qs/questions/{questionId} - 질문 수정 (제목, 내용, 카테고리, 상태, 파일)
+    // - status: "CLOSED" 전송 시 질문 닫힘(삭제) 처리
     // ============================================================================
     public Mono<ServerResponse> updateQuestion(ServerRequest request) {
-        Long questionId = Long.parseLong(request.pathVariable("questionId"));
+        Long questionId;
+        try {
+            questionId = Long.parseLong(request.pathVariable("questionId"));
+        } catch (NumberFormatException e) {
+            return Mono.error(ApiException.of(ErrorCode.INVALID_REQUEST, "잘못된 질문 ID입니다."));
+        }
 
         // JWT에서 userId 추출
         Mono<Long> userIdMono = request.principal()
@@ -290,52 +292,67 @@ public class QaHandler {
                 })
                 .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "로그인이 필요합니다.")));
 
-        return userIdMono.flatMap(userId -> request.multipartData()
-                .flatMap(parts -> {
-                    Map<String, Part> partMap = parts.toSingleValueMap();
+        return userIdMono
+                .flatMap(userId -> request.multipartData()
+                        .flatMap(parts -> {
+                            Map<String, Part> partMap = parts.toSingleValueMap();
 
-                    // Form Field 추출
-                    String title = getFormValue(partMap, "title");
-                    String content = getFormValue(partMap, "body"); // 프론트: body
-                    Long categoryId = parseLongSafe(getFormValue(partMap, "category"));
+                            // Form Field 추출
+                            String title = getFormValue(partMap, "title");
+                            String content = getFormValue(partMap, "body"); // 프론트: body
+                            Long categoryId = parseLongSafe(getFormValue(partMap, "category"));
+                            String status = getFormValue(partMap, "status"); // 상태 값 추출 (CLOSED 등)
 
-                    // 첨부파일 추출 (선택)
-                    Part filePart = partMap.get("file");
-                    FilePart file = (filePart instanceof FilePart) ? (FilePart) filePart : null;
+                            // 첨부파일 추출 (선택)
+                            Part filePart = partMap.get("file");
+                            FilePart file = (filePart instanceof FilePart) ? (FilePart) filePart : null;
 
-                    log.info("Update Question: id={}, title={}, categoryId={}, hasFile={}",
-                            questionId, title, categoryId, file != null);
+                            log.info("Update Question: id={}, title={}, categoryId={}, status={}, hasFile={}",
+                                    questionId, title, categoryId, status, file != null);
 
-                    // 필수값 검증
-                    if (title == null || title.isBlank()) {
-                        return ServerResponse.badRequest()
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .bodyValue(Map.of("error", "제목을 입력해주세요"));
-                    }
-                    if (content == null || content.isBlank()) {
-                        return ServerResponse.badRequest()
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .bodyValue(Map.of("error", "내용을 입력해주세요"));
-                    }
+                            // 필수값 검증 (단, 상태 변경만 하는 경우 제목/내용이 없을 수 있음 -> 서비스에서 처리하거나 여기서 유연하게)
+                            // 여기서는 title/content가 빈 값으로 오면 서비스에서 기존 값을 유지하도록 처리하는 것이 좋음.
+                            // 하지만 현재 구조상 null이 아니라 빈 문자열로 오기 때문에, 아예 수정 의도가 없는 경우 null로 넘기고 싶지만
+                            // multipart 특성상 빈 문자열로 올 수 있음.
+                            // -> 서비스 레이어에서 "빈 문자열이면 기존값 유지" 로직이 필요하거나,
+                            // 프론트에서 수정 안할 필드는 안 보내야 함(근데 multipart라 다 보낼 수도).
 
-                    return qaService.updateQuestion(questionId, title, content, categoryId, userId, file)
-                            .flatMap(response -> ServerResponse.ok()
+                            // 일단 기존 로직 유지하되 status 파라미터 추가 전달
+                            if (title == null || title.isBlank()) {
+                                return ServerResponse.badRequest()
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .bodyValue(Map.of("error", "제목을 입력해주세요"));
+                            }
+                            if (content == null || content.isBlank()) {
+                                return ServerResponse.badRequest()
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .bodyValue(Map.of("error", "내용을 입력해주세요"));
+                            }
+
+                            return qaService
+                                    .updateQuestion(questionId, title, content, categoryId, status, userId, file)
+                                    .flatMap(response -> ServerResponse.ok()
+                                            .contentType(MediaType.APPLICATION_JSON)
+                                            .bodyValue(response));
+                        })
+                        .onErrorResume(e -> {
+                            log.error("Failed to update question", e);
+                            return ServerResponse.badRequest()
                                     .contentType(MediaType.APPLICATION_JSON)
-                                    .bodyValue(response));
-                })
-                .onErrorResume(e -> {
-                    log.error("Failed to update question", e);
-                    return ServerResponse.badRequest()
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .bodyValue(Map.of("error", e.getMessage()));
-                }));
+                                    .bodyValue(Map.of("error", e.getMessage()));
+                        }));
     }
 
     // ============================================================================
     // [PUT] /api/qs/questions/{questionId}/answers/{answerId} - 답변 수정
     // ============================================================================
     public Mono<ServerResponse> updateAnswer(ServerRequest request) {
-        Long answerId = Long.parseLong(request.pathVariable("answerId"));
+        Long answerId;
+        try {
+            answerId = Long.parseLong(request.pathVariable("answerId"));
+        } catch (NumberFormatException e) {
+            return Mono.error(ApiException.of(ErrorCode.INVALID_REQUEST, "잘못된 답변 ID입니다."));
+        }
 
         // JWT에서 userId 추출
         Mono<Long> userIdMono = request.principal()
@@ -369,4 +386,5 @@ public class QaHandler {
                                     .bodyValue(Map.of("error", e.getMessage()));
                         }));
     }
+
 }
