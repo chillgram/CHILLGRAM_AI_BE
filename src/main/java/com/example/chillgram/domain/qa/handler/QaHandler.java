@@ -269,4 +269,87 @@ public class QaHandler {
             return null;
         }
     }
+
+    // ============================================================================
+    // [PUT] /api/qs/questions/{questionId} - 질문 수정
+    // ============================================================================
+    public Mono<ServerResponse> updateQuestion(ServerRequest request) {
+        Long questionId = Long.parseLong(request.pathVariable("questionId"));
+
+        // JWT에서 userId 추출
+        Mono<Long> userIdMono = request.principal()
+                .map(principal -> {
+                    if (principal instanceof org.springframework.security.authentication.UsernamePasswordAuthenticationToken auth) {
+                        return (Long) auth.getPrincipal();
+                    }
+                    throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보를 확인할 수 없습니다.");
+                })
+                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "로그인이 필요합니다.")));
+
+        return userIdMono
+                .flatMap(userId -> request.bodyToMono(com.example.chillgram.domain.qa.dto.QaQuestionUpdateRequest.class)
+                        .flatMap(req -> {
+                            // Validation 검증
+                            if (req.getTitle() == null || req.getTitle().isBlank()) {
+                                return ServerResponse.badRequest()
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .bodyValue(Map.of("error", "제목을 입력해주세요"));
+                            }
+                            if (req.getContent() == null || req.getContent().isBlank()) {
+                                return ServerResponse.badRequest()
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .bodyValue(Map.of("error", "내용을 입력해주세요"));
+                            }
+
+                            return qaService.updateQuestion(questionId, req.getTitle(), req.getContent(), userId)
+                                    .flatMap(response -> ServerResponse.ok()
+                                            .contentType(MediaType.APPLICATION_JSON)
+                                            .bodyValue(response));
+                        })
+                        .onErrorResume(e -> {
+                            log.error("Failed to update question", e);
+                            return ServerResponse.badRequest()
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .bodyValue(Map.of("error", e.getMessage()));
+                        }));
+    }
+
+    // ============================================================================
+    // [PUT] /api/qs/questions/{questionId}/answers/{answerId} - 답변 수정
+    // ============================================================================
+    public Mono<ServerResponse> updateAnswer(ServerRequest request) {
+        Long answerId = Long.parseLong(request.pathVariable("answerId"));
+
+        // JWT에서 userId 추출
+        Mono<Long> userIdMono = request.principal()
+                .map(principal -> {
+                    if (principal instanceof org.springframework.security.authentication.UsernamePasswordAuthenticationToken auth) {
+                        return (Long) auth.getPrincipal();
+                    }
+                    throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보를 확인할 수 없습니다.");
+                })
+                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "로그인이 필요합니다.")));
+
+        return userIdMono
+                .flatMap(userId -> request.bodyToMono(com.example.chillgram.domain.qa.dto.QaAnswerUpdateRequest.class)
+                        .flatMap(req -> {
+                            // Validation 검증
+                            if (req.getBody() == null || req.getBody().isBlank()) {
+                                return ServerResponse.badRequest()
+                                        .contentType(MediaType.APPLICATION_JSON)
+                                        .bodyValue(Map.of("error", "답변 내용을 입력해주세요"));
+                            }
+
+                            return qaService.updateAnswer(answerId, req.getBody(), userId)
+                                    .flatMap(response -> ServerResponse.ok()
+                                            .contentType(MediaType.APPLICATION_JSON)
+                                            .bodyValue(response));
+                        })
+                        .onErrorResume(e -> {
+                            log.error("Failed to update answer", e);
+                            return ServerResponse.badRequest()
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .bodyValue(Map.of("error", e.getMessage()));
+                        }));
+    }
 }

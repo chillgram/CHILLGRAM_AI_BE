@@ -136,6 +136,15 @@ public class QaService {
                                                                                                         .getViewCount())
                                                                                         .createdAt(question
                                                                                                         .getCreatedAt())
+                                                                                        .updatedAt(question
+                                                                                                        .getUpdatedAt() != null
+                                                                                                                        ? question.getUpdatedAt()
+                                                                                                                        : question.getCreatedAt()) // null이면
+                                                                                                                                                   // created_at
+                                                                                                                                                   // 사용
+                                                                                        .answeredAt(java.time.LocalDateTime
+                                                                                                        .now()) // 첫 답변
+                                                                                                                // 시간
                                                                                         .build();
                                                                         return qaQuestionRepository
                                                                                         .save(updatedQuestion)
@@ -155,6 +164,7 @@ public class QaService {
         @Transactional
         public Mono<QaWriteResponse> createQuestion(String title, String content, Long categoryId, Long companyId,
                         Long createdBy, FilePart filePart) {
+                java.time.LocalDateTime now = java.time.LocalDateTime.now();
                 QaQuestion question = QaQuestion.builder()
                                 .title(title)
                                 .body(content)
@@ -162,6 +172,8 @@ public class QaService {
                                 .companyId(companyId)
                                 .createdBy(createdBy)
                                 .status("WAITING")
+                                .createdAt(now)
+                                .updatedAt(now) // 생성 시점에는 created_at과 동일
                                 .build();
 
                 return qaQuestionRepository.save(question)
@@ -212,5 +224,79 @@ public class QaService {
                                 .doOnSuccess(att -> log.info("Attachment saved: questionId={}, file={}", questionId,
                                                 filePath))
                                 .doOnError(e -> log.error("File upload failed", e));
+        }
+
+        // ==================== 질문 수정 ====================
+        @Transactional
+        public Mono<QaWriteResponse> updateQuestion(Long questionId, String title, String content, Long userId) {
+                return qaQuestionRepository.findById(questionId)
+                                .switchIfEmpty(Mono.error(
+                                                com.example.chillgram.common.exception.ApiException.of(
+                                                                com.example.chillgram.common.exception.ErrorCode.NOT_FOUND,
+                                                                "질문을 찾을 수 없습니다. id=" + questionId)))
+                                .flatMap(question -> {
+                                        // 작성자 본인 확인
+                                        if (!question.getCreatedBy().equals(userId)) {
+                                                return Mono.error(
+                                                                com.example.chillgram.common.exception.ApiException.of(
+                                                                                com.example.chillgram.common.exception.ErrorCode.FORBIDDEN,
+                                                                                "본인이 작성한 질문만 수정할 수 있습니다."));
+                                        }
+
+                                        // 수정된 질문 생성 (R2DBC는 불변 객체)
+                                        QaQuestion updatedQuestion = QaQuestion.builder()
+                                                        .questionId(question.getQuestionId())
+                                                        .companyId(question.getCompanyId())
+                                                        .categoryId(question.getCategoryId())
+                                                        .createdBy(question.getCreatedBy())
+                                                        .title(title)
+                                                        .body(content)
+                                                        .status(question.getStatus())
+                                                        .viewCount(question.getViewCount())
+                                                        .createdAt(question.getCreatedAt())
+                                                        .updatedAt(java.time.LocalDateTime.now()) // 수정 시간 갱신
+                                                        .answeredAt(question.getAnsweredAt())
+                                                        .build();
+
+                                        return qaQuestionRepository.save(updatedQuestion);
+                                })
+                                .map(QaWriteResponse::from)
+                                .doOnSuccess(resp -> log.info("Question updated: id={}", questionId))
+                                .doOnError(e -> log.error("Failed to update question", e));
+        }
+
+        // ==================== 답변 수정 ====================
+        @Transactional
+        public Mono<QaAnswerResponse> updateAnswer(Long answerId, String body, Long userId) {
+                return qaAnswerRepository.findById(answerId)
+                                .switchIfEmpty(Mono.error(
+                                                com.example.chillgram.common.exception.ApiException.of(
+                                                                com.example.chillgram.common.exception.ErrorCode.NOT_FOUND,
+                                                                "답변을 찾을 수 없습니다. id=" + answerId)))
+                                .flatMap(answer -> {
+                                        // 작성자 본인 확인
+                                        if (!answer.getAnsweredBy().equals(userId)) {
+                                                return Mono.error(
+                                                                com.example.chillgram.common.exception.ApiException.of(
+                                                                                com.example.chillgram.common.exception.ErrorCode.FORBIDDEN,
+                                                                                "본인이 작성한 답변만 수정할 수 있습니다."));
+                                        }
+
+                                        // 수정된 답변 생성
+                                        QaAnswer updatedAnswer = QaAnswer.builder()
+                                                        .answerId(answer.getAnswerId())
+                                                        .questionId(answer.getQuestionId())
+                                                        .companyId(answer.getCompanyId())
+                                                        .answeredBy(answer.getAnsweredBy())
+                                                        .body(body)
+                                                        .createdAt(answer.getCreatedAt())
+                                                        .updatedAt(java.time.LocalDateTime.now()) // 수정 시간 갱신
+                                                        .build();
+
+                                        return qaAnswerRepository.save(updatedAnswer);
+                                })
+                                .map(QaAnswerResponse::from)
+                                .doOnSuccess(resp -> log.info("Answer updated: id={}", answerId))
+                                .doOnError(e -> log.error("Failed to update answer", e));
         }
 }
