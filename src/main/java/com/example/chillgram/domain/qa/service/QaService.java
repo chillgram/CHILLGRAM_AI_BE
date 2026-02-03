@@ -35,7 +35,8 @@ public class QaService {
 
         private final QaQuestionRepository qaQuestionRepository;
         private final QaQuestionAttachmentRepository qaQuestionAttachmentRepository;
-        private final QaAnswerRepository qaAnswerRepository; // 추가됨
+        private final QaAnswerRepository qaAnswerRepository;
+        private final com.example.chillgram.domain.user.repository.AppUserRepository appUserRepository;
 
         // Docker/서버 환경을 고려한 외부 절대 경로
         private static final String UPLOAD_DIR = "/app/uploads/qna/";
@@ -70,13 +71,34 @@ public class QaService {
                 }
 
                 return Mono.zip(countMono, listFlux.collectList())
-                                .map(tuple -> {
+                                .flatMap(tuple -> {
                                         Long total = tuple.getT1();
                                         List<QaQuestion> list = tuple.getT2();
-                                        List<QaListResponse> responses = list.stream()
-                                                        .map(QaListResponse::from)
+
+                                        // 1. 목록에 있는 모든 작성자 ID 수집
+                                        List<Long> userIds = list.stream()
+                                                        .map(QaQuestion::getCreatedBy)
+                                                        .distinct()
                                                         .collect(Collectors.toList());
-                                        return new PageImpl<>(responses, pageable, total);
+
+                                        // 2. ID로 이름 조회 (Bulk Fetch)
+                                        return appUserRepository.findAllById(userIds)
+                                                        .collectMap(com.example.chillgram.domain.user.domain.AppUser::getUserId,
+                                                                        com.example.chillgram.domain.user.domain.AppUser::getName)
+                                                        .map(nameMap -> {
+                                                                List<QaListResponse> responses = list.stream()
+                                                                                .map(q -> {
+                                                                                        QaListResponse res = QaListResponse
+                                                                                                        .from(q);
+                                                                                        // 3. 이름 맵핑
+                                                                                        res.setCreatedByName(nameMap
+                                                                                                        .getOrDefault(q.getCreatedBy(),
+                                                                                                                        "알 수 없음"));
+                                                                                        return res;
+                                                                                })
+                                                                                .collect(Collectors.toList());
+                                                                return new PageImpl<>(responses, pageable, total);
+                                                        });
                                 });
         }
 
@@ -91,9 +113,48 @@ public class QaService {
                                         Mono<List<QaAnswer>> answersMono = qaAnswerRepository
                                                         .findByQuestionIdOrderByCreatedAtAsc(questionId).collectList();
 
-                                        return Mono.zip(attachmentsMono, answersMono)
-                                                        .map(tuple -> QaDetailResponse.from(question, tuple.getT1(),
-                                                                        tuple.getT2()));
+                                        // 질문 작성자 이름 조회
+                                        Mono<String> creatorNameMono = appUserRepository
+                                                        .findById(question.getCreatedBy())
+                                                        .map(u -> u.getName() != null ? u.getName() : "알 수 없음")
+                                                        .defaultIfEmpty("알 수 없음");
+
+                                        return Mono.zip(attachmentsMono, answersMono, creatorNameMono)
+                                                        .flatMap(tuple -> {
+                                                                List<QaQuestionAttachment> attachments = tuple.getT1();
+                                                                List<QaAnswer> answers = tuple.getT2();
+                                                                String creatorName = tuple.getT3();
+
+                                                                // 답변 작성자들의 이름 조회 준비
+                                                                List<Long> answerUserIds = answers.stream()
+                                                                                .map(QaAnswer::getAnsweredBy)
+                                                                                .distinct()
+                                                                                .collect(Collectors.toList());
+
+                                                                return appUserRepository.findAllById(answerUserIds)
+                                                                                .collectMap(com.example.chillgram.domain.user.domain.AppUser::getUserId,
+                                                                                                com.example.chillgram.domain.user.domain.AppUser::getName)
+                                                                                .map(nameMap -> {
+                                                                                        QaDetailResponse response = QaDetailResponse
+                                                                                                        .from(question, attachments,
+                                                                                                                        answers);
+                                                                                        response.setCreatedByName(
+                                                                                                        creatorName);
+
+                                                                                        // 답변 DTO에도 이름 채워넣기
+                                                                                        // QaDetailResponse.from 내부에서
+                                                                                        // DTO 리스트를 만듦 -> 다시 꺼내서 세팅?
+                                                                                        // 혹은 from 후에 answers를 순회하며 세팅
+                                                                                        response.getAnswers().forEach(
+                                                                                                        dto -> {
+                                                                                                                dto.setAnsweredByName(
+                                                                                                                                nameMap.getOrDefault(
+                                                                                                                                                dto.getAnsweredBy(),
+                                                                                                                                                "알 수 없음"));
+                                                                                                        });
+                                                                                        return response;
+                                                                                });
+                                                        });
                                 })
                                 .switchIfEmpty(Mono.error(
                                                 new IllegalArgumentException("Question not found id=" + questionId)));
@@ -154,7 +215,18 @@ public class QaService {
                                                                 return Mono.just(savedAnswer);
                                                         });
                                 })
-                                .map(QaAnswerResponse::from)
+                                .flatMap(savedAnswer -> {
+                                        // 작성자 이름 조회 후 응답 생성
+                                        return appUserRepository.findById(answeredBy)
+                                                        .map(u -> u.getName() != null ? u.getName() : "알 수 없음")
+                                                        .defaultIfEmpty("알 수 없음")
+                                                        .map(name -> {
+                                                                QaAnswerResponse resp = QaAnswerResponse
+                                                                                .from(savedAnswer);
+                                                                resp.setAnsweredByName(name);
+                                                                return resp;
+                                                        });
+                                })
                                 .doOnSuccess(
                                                 resp -> log.info("Answer created: questionId={}, answerId={}",
                                                                 questionId, resp.getAnswerId()))
@@ -186,6 +258,8 @@ public class QaService {
                                         return Mono.just(savedQuestion);
                                 })
                                 .map(QaWriteResponse::from);
+                // 작성자 이름은 createQuestion 응답(QaWriteResponse)에는 포함하지 않음 (요구사항 없음)
+                // 필요하다면 추가 가능
         }
 
         // ==================== 첨부파일 저장 ====================
@@ -217,7 +291,7 @@ public class QaService {
                                                         .questionId(questionId)
                                                         .fileUrl(webPath)
                                                         .mimeType(mimeType)
-                                                        .fileSize(fileSize)
+                                                        .fileSize(fileSize) // String -> Long
                                                         .build();
 
                                         return qaQuestionAttachmentRepository.save(attachment);
@@ -313,7 +387,18 @@ public class QaService {
 
                                         return qaAnswerRepository.save(updatedAnswer);
                                 })
-                                .map(QaAnswerResponse::from)
+                                .flatMap(savedAnswer -> {
+                                        // 작성자 이름 조회 후 응답 생성
+                                        return appUserRepository.findById(userId)
+                                                        .map(u -> u.getName() != null ? u.getName() : "알 수 없음")
+                                                        .defaultIfEmpty("알 수 없음")
+                                                        .map(name -> {
+                                                                QaAnswerResponse resp = QaAnswerResponse
+                                                                                .from(savedAnswer);
+                                                                resp.setAnsweredByName(name);
+                                                                return resp;
+                                                        });
+                                })
                                 .doOnSuccess(resp -> log.info("Answer updated: id={}", answerId))
                                 .doOnError(e -> log.error("Failed to update answer", e));
         }

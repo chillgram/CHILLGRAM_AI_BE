@@ -13,6 +13,7 @@ public class QaAnswerResponse {
     private Long questionId;
     private Long companyId;
     private Long answeredBy;
+    private String answeredByName; // 답변 작성자 이름 추가
     private String body;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -27,5 +28,9 @@ public class QaAnswerResponse {
                 .createdAt(answer.getCreatedAt())
                 .updatedAt(answer.getUpdatedAt())
                 .build();
+    }
+
+    public void setAnsweredByName(String answeredByName) {
+        this.answeredByName = answeredByName;
     }
 }

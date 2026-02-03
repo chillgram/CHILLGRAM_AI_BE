@@ -15,7 +15,8 @@ public class QaListResponse {
     private String body; // 본문 미리보기용
     private String status;
     private Integer viewCount;
-    private Long createdBy; // 작성자 ID (추후 이름 매핑 필요)
+    private Long createdBy; // 작성자 ID
+    private String createdByName; // 작성자 이름 (추가)
     private LocalDateTime createdAt;
     // private Integer answerCount; // 답변 수는 별도 쿼리 필요
 
@@ -26,9 +27,11 @@ public class QaListResponse {
                 .title(question.getTitle())
                 .body(question.getBody())
                 .status(question.getStatus())
-                .viewCount(question.getViewCount())
-                .createdBy(question.getCreatedBy())
                 .createdAt(question.getCreatedAt())
                 .build();
+    }
+
+    public void setCreatedByName(String createdByName) {
+        this.createdByName = createdByName;
     }
 }
