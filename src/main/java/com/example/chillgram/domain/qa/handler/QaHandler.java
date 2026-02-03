@@ -2,6 +2,8 @@ package com.example.chillgram.domain.qa.handler;
 
 import com.example.chillgram.domain.qa.dto.QaAnswerCreateRequest;
 import com.example.chillgram.domain.qa.service.QaService;
+import com.example.chillgram.common.exception.ApiException;
+import com.example.chillgram.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -51,16 +53,38 @@ public class QaHandler {
     // - 실패: 400 Bad Request + { "error": "메시지" }
     // ============================================================================
     public Mono<ServerResponse> createQuestion(ServerRequest request) {
-        return request.multipartData()
+        // 로그인한 유저 ID 추출 (JWT principal에서)
+        Mono<Long> userIdMono = request.principal()
+                .map(principal -> {
+                    if (principal instanceof org.springframework.security.authentication.UsernamePasswordAuthenticationToken auth) {
+                        return (Long) auth.getPrincipal();
+                    }
+                    throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보를 확인할 수 없습니다.");
+                })
+                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "로그인이 필요합니다.")));
+
+        return userIdMono.flatMap(loggedInUserId -> request.multipartData()
                 .flatMap(parts -> {
                     Map<String, Part> partMap = parts.toSingleValueMap();
 
                     // 1. Form Field 추출
                     String title = getFormValue(partMap, "title");
                     String content = getFormValue(partMap, "content");
+
+                    // 기본값 1L 설정 (FK 에러 방지)
                     Long categoryId = parseLongSafe(getFormValue(partMap, "category"));
+                    if (categoryId == null)
+                        categoryId = 1L;
+
                     Long companyId = parseLongSafe(getFormValue(partMap, "companyId"));
-                    Long createdBy = parseLongSafe(getFormValue(partMap, "createdBy"));
+                    if (companyId == null)
+                        companyId = 1L;
+
+                    // 로그인한 유저 ID 사용 (JWT에서 추출)
+                    Long createdBy = loggedInUserId;
+
+                    log.info("Create Question Params: title={}, content={}, categoryId={}, companyId={}, createdBy={}",
+                            title, content, categoryId, companyId, createdBy);
 
                     // 2. 첨부파일 추출 (선택)
                     Part filePart = partMap.get("file");
@@ -68,9 +92,15 @@ public class QaHandler {
 
                     // 3. 필수값 검증
                     if (title.isBlank() || content.isBlank()) {
+                        String missing = "";
+                        if (title.isBlank())
+                            missing += "title ";
+                        if (content.isBlank())
+                            missing += "content ";
+                        log.warn("Missing required fields: {}", missing);
                         return ServerResponse.badRequest()
                                 .contentType(MediaType.APPLICATION_JSON)
-                                .bodyValue(Map.of("error", "Title and content are required"));
+                                .bodyValue(Map.of("error", "Missing required fields: " + missing.trim()));
                     }
 
                     // 4. Service 호출 → 응답 반환
@@ -83,8 +113,8 @@ public class QaHandler {
                     log.error("Failed to create question", e);
                     return ServerResponse.badRequest()
                             .contentType(MediaType.APPLICATION_JSON)
-                            .bodyValue(Map.of("error", e.getMessage()));
-                });
+                            .bodyValue(Map.of("error", "Server Error: " + e.getMessage()));
+                }));
     }
 
     // ============================================================================
