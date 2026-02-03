@@ -271,7 +271,11 @@ public class QaHandler {
     }
 
     // ============================================================================
-    // [PUT] /api/qs/questions/{questionId} - 질문 수정
+    // [PUT] /api/qs/questions/{questionId} - 질문 수정 (Multipart)
+    // - title: 수정할 제목
+    // - content: 수정할 내용
+    // - category: 카테고리 ID (선택)
+    // - file: 첨부파일 (선택)
     // ============================================================================
     public Mono<ServerResponse> updateQuestion(ServerRequest request) {
         Long questionId = Long.parseLong(request.pathVariable("questionId"));
@@ -286,32 +290,45 @@ public class QaHandler {
                 })
                 .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "로그인이 필요합니다.")));
 
-        return userIdMono
-                .flatMap(userId -> request.bodyToMono(com.example.chillgram.domain.qa.dto.QaQuestionUpdateRequest.class)
-                        .flatMap(req -> {
-                            // Validation 검증
-                            if (req.getTitle() == null || req.getTitle().isBlank()) {
-                                return ServerResponse.badRequest()
-                                        .contentType(MediaType.APPLICATION_JSON)
-                                        .bodyValue(Map.of("error", "제목을 입력해주세요"));
-                            }
-                            if (req.getContent() == null || req.getContent().isBlank()) {
-                                return ServerResponse.badRequest()
-                                        .contentType(MediaType.APPLICATION_JSON)
-                                        .bodyValue(Map.of("error", "내용을 입력해주세요"));
-                            }
+        return userIdMono.flatMap(userId -> request.multipartData()
+                .flatMap(parts -> {
+                    Map<String, Part> partMap = parts.toSingleValueMap();
 
-                            return qaService.updateQuestion(questionId, req.getTitle(), req.getContent(), userId)
-                                    .flatMap(response -> ServerResponse.ok()
-                                            .contentType(MediaType.APPLICATION_JSON)
-                                            .bodyValue(response));
-                        })
-                        .onErrorResume(e -> {
-                            log.error("Failed to update question", e);
-                            return ServerResponse.badRequest()
+                    // Form Field 추출
+                    String title = getFormValue(partMap, "title");
+                    String content = getFormValue(partMap, "body"); // 프론트: body
+                    Long categoryId = parseLongSafe(getFormValue(partMap, "category"));
+
+                    // 첨부파일 추출 (선택)
+                    Part filePart = partMap.get("file");
+                    FilePart file = (filePart instanceof FilePart) ? (FilePart) filePart : null;
+
+                    log.info("Update Question: id={}, title={}, categoryId={}, hasFile={}",
+                            questionId, title, categoryId, file != null);
+
+                    // 필수값 검증
+                    if (title == null || title.isBlank()) {
+                        return ServerResponse.badRequest()
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .bodyValue(Map.of("error", "제목을 입력해주세요"));
+                    }
+                    if (content == null || content.isBlank()) {
+                        return ServerResponse.badRequest()
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .bodyValue(Map.of("error", "내용을 입력해주세요"));
+                    }
+
+                    return qaService.updateQuestion(questionId, title, content, categoryId, userId, file)
+                            .flatMap(response -> ServerResponse.ok()
                                     .contentType(MediaType.APPLICATION_JSON)
-                                    .bodyValue(Map.of("error", e.getMessage()));
-                        }));
+                                    .bodyValue(response));
+                })
+                .onErrorResume(e -> {
+                    log.error("Failed to update question", e);
+                    return ServerResponse.badRequest()
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .bodyValue(Map.of("error", e.getMessage()));
+                }));
     }
 
     // ============================================================================

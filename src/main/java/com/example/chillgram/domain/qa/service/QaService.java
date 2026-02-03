@@ -228,7 +228,8 @@ public class QaService {
 
         // ==================== 질문 수정 ====================
         @Transactional
-        public Mono<QaWriteResponse> updateQuestion(Long questionId, String title, String content, Long userId) {
+        public Mono<QaWriteResponse> updateQuestion(Long questionId, String title, String content,
+                        Long categoryId, Long userId, FilePart filePart) {
                 return qaQuestionRepository.findById(questionId)
                                 .switchIfEmpty(Mono.error(
                                                 com.example.chillgram.common.exception.ApiException.of(
@@ -243,11 +244,15 @@ public class QaService {
                                                                                 "본인이 작성한 질문만 수정할 수 있습니다."));
                                         }
 
+                                        // categoryId가 null이면 기존값 유지
+                                        Long finalCategoryId = categoryId != null ? categoryId
+                                                        : question.getCategoryId();
+
                                         // 수정된 질문 생성 (R2DBC는 불변 객체)
                                         QaQuestion updatedQuestion = QaQuestion.builder()
                                                         .questionId(question.getQuestionId())
                                                         .companyId(question.getCompanyId())
-                                                        .categoryId(question.getCategoryId())
+                                                        .categoryId(finalCategoryId)
                                                         .createdBy(question.getCreatedBy())
                                                         .title(title)
                                                         .body(content)
@@ -259,6 +264,14 @@ public class QaService {
                                                         .build();
 
                                         return qaQuestionRepository.save(updatedQuestion);
+                                })
+                                .flatMap(savedQuestion -> {
+                                        // 새 첨부파일이 있으면 저장
+                                        if (filePart != null && !filePart.filename().isBlank()) {
+                                                return saveAttachment(savedQuestion.getQuestionId(), filePart)
+                                                                .thenReturn(savedQuestion);
+                                        }
+                                        return Mono.just(savedQuestion);
                                 })
                                 .map(QaWriteResponse::from)
                                 .doOnSuccess(resp -> log.info("Question updated: id={}", questionId))
