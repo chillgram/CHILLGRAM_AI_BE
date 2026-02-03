@@ -2,6 +2,7 @@ package com.example.chillgram.domain.qa.handler;
 
 import com.example.chillgram.domain.qa.dto.QaAnswerCreateRequest;
 import com.example.chillgram.domain.qa.service.QaService;
+import com.example.chillgram.domain.user.repository.AppUserRepository;
 import com.example.chillgram.common.exception.ApiException;
 import com.example.chillgram.common.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +39,7 @@ import java.util.Map;
 public class QaHandler {
 
     private final QaService qaService;
+    private final AppUserRepository appUserRepository;
 
     // ============================================================================
     // [POST] /api/v1/qs/questions - 질문 작성
@@ -64,51 +66,55 @@ public class QaHandler {
                 })
                 .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "로그인이 필요합니다.")));
 
-        return userIdMono.flatMap(loggedInUserId -> request.multipartData()
-                .flatMap(parts -> {
-                    Map<String, Part> partMap = parts.toSingleValueMap();
+        // userId로 DB 조회 → companyId 획득
+        return userIdMono.flatMap(loggedInUserId -> appUserRepository.findById(loggedInUserId)
+                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.NOT_FOUND, "사용자를 찾을 수 없습니다.")))
+                .flatMap(user -> {
+                    Long companyId = user.getCompanyId() != null ? user.getCompanyId() : 1L;
+                    Long createdBy = user.getUserId();
 
-                    // 1. Form Field 추출
-                    String title = getFormValue(partMap, "title");
-                    String content = getFormValue(partMap, "content");
+                    log.info("User found: userId={}, companyId={}", createdBy, companyId);
 
-                    // 기본값 1L 설정 (FK 에러 방지)
-                    Long categoryId = parseLongSafe(getFormValue(partMap, "category"));
-                    if (categoryId == null)
-                        categoryId = 1L;
+                    return request.multipartData()
+                            .flatMap(parts -> {
+                                Map<String, Part> partMap = parts.toSingleValueMap();
 
-                    Long companyId = parseLongSafe(getFormValue(partMap, "companyId"));
-                    if (companyId == null)
-                        companyId = 1L;
+                                // 1. Form Field 추출
+                                String title = getFormValue(partMap, "title");
+                                String content = getFormValue(partMap, "content");
 
-                    // 로그인한 유저 ID 사용 (JWT에서 추출)
-                    Long createdBy = loggedInUserId;
+                                // 기본값 1L 설정 (FK 에러 방지)
+                                Long categoryId = parseLongSafe(getFormValue(partMap, "category"));
+                                if (categoryId == null)
+                                    categoryId = 1L;
 
-                    log.info("Create Question Params: title={}, content={}, categoryId={}, companyId={}, createdBy={}",
-                            title, content, categoryId, companyId, createdBy);
+                                log.info(
+                                        "Create Question Params: title={}, content={}, categoryId={}, companyId={}, createdBy={}",
+                                        title, content, categoryId, companyId, createdBy);
 
-                    // 2. 첨부파일 추출 (선택)
-                    Part filePart = partMap.get("file");
-                    FilePart file = (filePart instanceof FilePart) ? (FilePart) filePart : null;
+                                // 2. 첨부파일 추출 (선택)
+                                Part filePart = partMap.get("file");
+                                FilePart file = (filePart instanceof FilePart) ? (FilePart) filePart : null;
 
-                    // 3. 필수값 검증
-                    if (title.isBlank() || content.isBlank()) {
-                        String missing = "";
-                        if (title.isBlank())
-                            missing += "title ";
-                        if (content.isBlank())
-                            missing += "content ";
-                        log.warn("Missing required fields: {}", missing);
-                        return ServerResponse.badRequest()
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .bodyValue(Map.of("error", "Missing required fields: " + missing.trim()));
-                    }
+                                // 3. 필수값 검증
+                                if (title.isBlank() || content.isBlank()) {
+                                    String missing = "";
+                                    if (title.isBlank())
+                                        missing += "title ";
+                                    if (content.isBlank())
+                                        missing += "content ";
+                                    log.warn("Missing required fields: {}", missing);
+                                    return ServerResponse.badRequest()
+                                            .contentType(MediaType.APPLICATION_JSON)
+                                            .bodyValue(Map.of("error", "Missing required fields: " + missing.trim()));
+                                }
 
-                    // 4. Service 호출 → 응답 반환
-                    return qaService.createQuestion(title, content, categoryId, companyId, createdBy, file)
-                            .flatMap(response -> ServerResponse.ok()
-                                    .contentType(MediaType.APPLICATION_JSON)
-                                    .bodyValue(response));
+                                // 4. Service 호출 → 응답 반환
+                                return qaService.createQuestion(title, content, categoryId, companyId, createdBy, file)
+                                        .flatMap(response -> ServerResponse.ok()
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .bodyValue(response));
+                            });
                 })
                 .onErrorResume(e -> {
                     log.error("Failed to create question", e);
@@ -189,28 +195,50 @@ public class QaHandler {
         // Path Variable 추출
         Long questionId = Long.parseLong(request.pathVariable("questionId"));
 
-        // Request Body 파싱 → 검증 → Service 호출
-        return request.bodyToMono(QaAnswerCreateRequest.class)
-                .flatMap(req -> {
-                    // 필수값 검증
-                    if (req.getBody() == null || req.getBody().isBlank()) {
-                        return ServerResponse.badRequest()
-                                .contentType(MediaType.APPLICATION_JSON)
-                                .bodyValue(Map.of("error", "Answer body is required"));
+        // 로그인한 유저 ID 추출 (JWT principal에서)
+        Mono<Long> userIdMono = request.principal()
+                .map(principal -> {
+                    if (principal instanceof org.springframework.security.authentication.UsernamePasswordAuthenticationToken auth) {
+                        return (Long) auth.getPrincipal();
                     }
+                    throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보를 확인할 수 없습니다.");
+                })
+                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "로그인이 필요합니다.")));
 
-                    // Service 호출 → 응답 반환
-                    return qaService.createAnswer(questionId, req.getBody(), req.getCompanyId(), req.getAnsweredBy())
-                            .flatMap(response -> ServerResponse.status(201)
-                                    .contentType(MediaType.APPLICATION_JSON)
-                                    .bodyValue(response));
+        // userId로 DB 조회 → companyId 획득
+        return userIdMono.flatMap(loggedInUserId -> appUserRepository.findById(loggedInUserId)
+                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.NOT_FOUND, "사용자를 찾을 수 없습니다.")))
+                .flatMap(user -> {
+                    Long companyId = user.getCompanyId() != null ? user.getCompanyId() : 1L;
+                    Long answeredBy = user.getUserId();
+
+                    log.info("User found for answer: userId={}, companyId={}", answeredBy, companyId);
+
+                    return request.bodyToMono(QaAnswerCreateRequest.class)
+                            .flatMap(req -> {
+                                // 필수값 검증
+                                if (req.getBody() == null || req.getBody().isBlank()) {
+                                    return ServerResponse.badRequest()
+                                            .contentType(MediaType.APPLICATION_JSON)
+                                            .bodyValue(Map.of("error", "Answer body is required"));
+                                }
+
+                                log.info("Create Answer Params: questionId={}, companyId={}, answeredBy={}",
+                                        questionId, companyId, answeredBy);
+
+                                // Service 호출 → 응답 반환
+                                return qaService.createAnswer(questionId, req.getBody(), companyId, answeredBy)
+                                        .flatMap(response -> ServerResponse.status(201)
+                                                .contentType(MediaType.APPLICATION_JSON)
+                                                .bodyValue(response));
+                            });
                 })
                 .onErrorResume(e -> {
                     log.error("Failed to create answer", e);
                     return ServerResponse.badRequest()
                             .contentType(MediaType.APPLICATION_JSON)
                             .bodyValue(Map.of("error", e.getMessage()));
-                });
+                }));
     }
 
     // ============================================================================
