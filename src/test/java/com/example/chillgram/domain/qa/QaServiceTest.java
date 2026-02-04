@@ -144,7 +144,7 @@ class QaServiceTest {
         when(qaQuestionAttachmentRepository.findByQuestionId(1L)).thenReturn(Flux.empty());
         when(qaAnswerRepository.findByQuestionIdOrderByCreatedAtAsc(1L)).thenReturn(Flux.just(mockAnswer));
 
-        Mono<QaDetailResponse> result = qaService.getQuestionDetail(1L);
+        Mono<QaDetailResponse> result = qaService.getQuestionDetail(1L, "http://localhost:8080");
 
         StepVerifier.create(result)
                 .assertNext(detail -> {
@@ -163,7 +163,7 @@ class QaServiceTest {
     void getQuestionDetail_NotFound() {
         when(qaQuestionRepository.findById(999L)).thenReturn(Mono.empty());
 
-        Mono<QaDetailResponse> result = qaService.getQuestionDetail(999L);
+        Mono<QaDetailResponse> result = qaService.getQuestionDetail(999L, "http://localhost:8080");
 
         StepVerifier.create(result)
                 .expectError(IllegalArgumentException.class)

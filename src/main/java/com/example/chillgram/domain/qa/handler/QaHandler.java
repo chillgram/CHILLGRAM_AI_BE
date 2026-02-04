@@ -169,8 +169,15 @@ public class QaHandler {
         // Path Variable 추출
         Long questionId = Long.parseLong(request.pathVariable("id"));
 
+        // Base URL 추출 (scheme + host + port)
+        java.net.URI uri = request.uri();
+        String baseUrl = uri.getScheme() + "://" + uri.getHost();
+        if (uri.getPort() != -1) {
+            baseUrl += ":" + uri.getPort();
+        }
+
         // Service 호출 → 응답 반환
-        return qaService.getQuestionDetail(questionId)
+        return qaService.getQuestionDetail(questionId, baseUrl)
                 .flatMap(response -> ServerResponse.ok()
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(response))

@@ -104,7 +104,7 @@ public class QaService {
 
         // ==================== 상세 조회 (답변 포함) ====================
         @Transactional(readOnly = true)
-        public Mono<QaDetailResponse> getQuestionDetail(Long questionId) {
+        public Mono<QaDetailResponse> getQuestionDetail(Long questionId, String baseUrl) {
                 return qaQuestionRepository.findById(questionId)
                                 .flatMap(question -> {
                                         // 첨부파일 + 답변 동시 조회
@@ -137,14 +137,12 @@ public class QaService {
                                                                                 .map(nameMap -> {
                                                                                         QaDetailResponse response = QaDetailResponse
                                                                                                         .from(question, attachments,
-                                                                                                                        answers);
+                                                                                                                        answers,
+                                                                                                                        baseUrl);
                                                                                         response.setCreatedByName(
                                                                                                         creatorName);
 
                                                                                         // 답변 DTO에도 이름 채워넣기
-                                                                                        // QaDetailResponse.from 내부에서
-                                                                                        // DTO 리스트를 만듦 -> 다시 꺼내서 세팅?
-                                                                                        // 혹은 from 후에 answers를 순회하며 세팅
                                                                                         response.getAnswers().forEach(
                                                                                                         dto -> {
                                                                                                                 dto.setAnsweredByName(
