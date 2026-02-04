@@ -58,7 +58,7 @@ public class R2dbcConfig extends AbstractR2dbcConfiguration {
     @Override
     public R2dbcCustomConversions r2dbcCustomConversions() {
         List<Converter<?, ?>> converters = new ArrayList<>();
-        // 필요한 경우 여기에 커스텀 컨버터 추가 (현재는 표준 매핑 사용)
-        return R2dbcCustomConversions.of(dialects().getDialect(connectionFactory), converters);
+        // 강제로 PostgreSQL 방언을 사용하도록 설정 (자동 감지 실패 방지)
+        return R2dbcCustomConversions.of(org.springframework.data.r2dbc.dialect.PostgresDialect.INSTANCE, converters);
     }
 }
