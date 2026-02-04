@@ -5,8 +5,6 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-import java.math.BigDecimal;
-
 /**
  * 제품 수정 요청 DTO
  * PUT /api/products/{id}
@@ -33,11 +31,6 @@ public class ProductUpdateRequest {
      * 제품 설명 (null이면 기존 값 유지)
      */
     private String description;
-
-    /**
-     * 가격 (null이면 기존 값 유지)
-     */
-    private BigDecimal price;
 
     /**
      * 활성화 여부 (null이면 기존 값 유지)

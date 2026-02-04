@@ -10,7 +10,6 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Table("product")
@@ -35,10 +34,6 @@ public class Product {
 
     @Column("description")
     private String description;
-
-    // UI Requirements: Price field
-    @Column("price")
-    private BigDecimal price;
 
     @Column("is_active")
     @Builder.Default
@@ -68,9 +63,7 @@ public class Product {
         if (request.getDescription() != null) {
             this.description = request.getDescription();
         }
-        if (request.getPrice() != null) {
-            this.price = request.getPrice();
-        }
+
         if (request.getIsActive() != null) {
             this.isActive = request.getIsActive();
         }
