@@ -88,8 +88,10 @@ public class ProductService {
 
                                         // Collect IDs for bulk fetch
                                         Set<Long> companyIds = products.stream().map(Product::getCompanyId)
+                                                        .filter(id -> id != null)
                                                         .collect(Collectors.toSet());
                                         Set<Long> createdByIds = products.stream().map(Product::getCreatedBy)
+                                                        .filter(id -> id != null)
                                                         .collect(Collectors.toSet());
 
                                         return Mono.zip(
