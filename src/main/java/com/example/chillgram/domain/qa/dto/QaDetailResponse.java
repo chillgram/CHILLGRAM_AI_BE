@@ -41,9 +41,13 @@ public class QaDetailResponse {
         private Long fileSize;
 
         public static AttachmentDto from(QaQuestionAttachment attachment) {
+            return from(attachment, "");
+        }
+
+        public static AttachmentDto from(QaQuestionAttachment attachment, String baseUrl) {
             return AttachmentDto.builder()
                     .attachmentId(attachment.getAttachmentId())
-                    .fileUrl(attachment.getFileUrl())
+                    .fileUrl(baseUrl + attachment.getFileUrl()) // 전체 URL 반환
                     .mimeType(attachment.getMimeType())
                     .fileSize(attachment.getFileSize())
                     .build();
@@ -80,6 +84,13 @@ public class QaDetailResponse {
     public static QaDetailResponse from(QaQuestion question,
             List<QaQuestionAttachment> attachments,
             List<QaAnswer> answers) {
+        return from(question, attachments, answers, "");
+    }
+
+    public static QaDetailResponse from(QaQuestion question,
+            List<QaQuestionAttachment> attachments,
+            List<QaAnswer> answers,
+            String fileBaseUrl) {
         return QaDetailResponse.builder()
                 .questionId(question.getQuestionId())
                 .categoryId(question.getCategoryId())
@@ -92,7 +103,7 @@ public class QaDetailResponse {
                 // createdByName은 Service에서 채워야 함
                 .createdAt(question.getCreatedAt())
                 .attachments(attachments != null
-                        ? attachments.stream().map(AttachmentDto::from).collect(Collectors.toList())
+                        ? attachments.stream().map(a -> AttachmentDto.from(a, fileBaseUrl)).collect(Collectors.toList())
                         : Collections.emptyList())
                 .answers(answers != null
                         ? answers.stream().map(AnswerDto::from).collect(Collectors.toList())

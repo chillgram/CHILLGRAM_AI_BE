@@ -104,7 +104,7 @@ public class QaService {
 
         // ==================== 상세 조회 (답변 포함) ====================
         @Transactional(readOnly = true)
-        public Mono<QaDetailResponse> getQuestionDetail(Long questionId) {
+        public Mono<QaDetailResponse> getQuestionDetail(Long questionId, String baseUrl) {
                 return qaQuestionRepository.findById(questionId)
                                 .flatMap(question -> {
                                         // 첨부파일 + 답변 동시 조회
@@ -137,14 +137,12 @@ public class QaService {
                                                                                 .map(nameMap -> {
                                                                                         QaDetailResponse response = QaDetailResponse
                                                                                                         .from(question, attachments,
-                                                                                                                        answers);
+                                                                                                                        answers,
+                                                                                                                        baseUrl);
                                                                                         response.setCreatedByName(
                                                                                                         creatorName);
 
                                                                                         // 답변 DTO에도 이름 채워넣기
-                                                                                        // QaDetailResponse.from 내부에서
-                                                                                        // DTO 리스트를 만듦 -> 다시 꺼내서 세팅?
-                                                                                        // 혹은 from 후에 answers를 순회하며 세팅
                                                                                         response.getAnswers().forEach(
                                                                                                         dto -> {
                                                                                                                 dto.setAnsweredByName(
@@ -327,14 +325,22 @@ public class QaService {
                                         String finalStatus = (status != null && !status.isBlank()) ? status
                                                         : question.getStatus();
 
+                                        // title이 null이거나 비어있으면 기존값 유지
+                                        String finalTitle = (title != null && !title.isBlank()) ? title
+                                                        : question.getTitle();
+
+                                        // content가 null이거나 비어있으면 기존값 유지
+                                        String finalContent = (content != null && !content.isBlank()) ? content
+                                                        : question.getBody();
+
                                         // 수정된 질문 생성 (R2DBC는 불변 객체)
                                         QaQuestion updatedQuestion = QaQuestion.builder()
                                                         .questionId(question.getQuestionId())
                                                         .companyId(question.getCompanyId())
                                                         .categoryId(finalCategoryId)
                                                         .createdBy(question.getCreatedBy())
-                                                        .title(title)
-                                                        .body(content)
+                                                        .title(finalTitle)
+                                                        .body(finalContent)
                                                         .status(finalStatus) // 상태 변경 적용
                                                         .viewCount(question.getViewCount())
                                                         .createdAt(question.getCreatedAt())
