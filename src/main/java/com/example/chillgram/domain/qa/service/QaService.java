@@ -104,7 +104,7 @@ public class QaService {
 
         // ==================== 상세 조회 (답변 포함) ====================
         @Transactional(readOnly = true)
-        public Mono<QaDetailResponse> getQuestionDetail(Long questionId, String baseUrl) {
+        public Mono<QaDetailResponse> getQuestionDetail(Long questionId) {
                 return qaQuestionRepository.findById(questionId)
                                 .flatMap(question -> {
                                         // 첨부파일 + 답변 동시 조회
@@ -137,8 +137,7 @@ public class QaService {
                                                                                 .map(nameMap -> {
                                                                                         QaDetailResponse response = QaDetailResponse
                                                                                                         .from(question, attachments,
-                                                                                                                        answers,
-                                                                                                                        baseUrl);
+                                                                                                                        answers);
                                                                                         response.setCreatedByName(
                                                                                                         creatorName);
 
@@ -282,8 +281,8 @@ public class QaService {
                                 .then(Mono.defer(() -> {
                                         long fileSize = new File(filePath).length();
 
-                                        // DB에는 웹 접근 경로로 저장 (/qna/파일명)
-                                        String webPath = "/qna/" + safeFilename;
+                                        // DB에는 웹 접근 경로로 저장 (/uploads/qna/파일명)
+                                        String webPath = "/uploads/qna/" + safeFilename;
 
                                         QaQuestionAttachment attachment = QaQuestionAttachment.builder()
                                                         .questionId(questionId)
