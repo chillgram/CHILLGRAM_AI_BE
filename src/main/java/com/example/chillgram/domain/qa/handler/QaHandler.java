@@ -70,7 +70,10 @@ public class QaHandler {
         return userIdMono.flatMap(loggedInUserId -> appUserRepository.findById(loggedInUserId)
                 .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.NOT_FOUND, "사용자를 찾을 수 없습니다.")))
                 .flatMap(user -> {
-                    Long companyId = user.getCompanyId() != null ? user.getCompanyId() : 1L;
+                    Long companyId = user.getCompanyId();
+                    if (companyId == null) {
+                        return Mono.error(ApiException.of(ErrorCode.FORBIDDEN, "소속된 회사가 없어 질문을 등록할 수 없습니다."));
+                    }
                     Long createdBy = user.getUserId();
 
                     log.info("User found: userId={}, companyId={}", createdBy, companyId);
@@ -235,7 +238,10 @@ public class QaHandler {
         return userIdMono.flatMap(loggedInUserId -> appUserRepository.findById(loggedInUserId)
                 .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.NOT_FOUND, "사용자를 찾을 수 없습니다.")))
                 .flatMap(user -> {
-                    Long companyId = user.getCompanyId() != null ? user.getCompanyId() : 1L;
+                    Long companyId = user.getCompanyId();
+                    if (companyId == null) {
+                        return Mono.error(ApiException.of(ErrorCode.FORBIDDEN, "소속된 회사가 없어 답변을 등록할 수 없습니다."));
+                    }
                     Long answeredBy = user.getUserId();
 
                     log.info("User found for answer: userId={}, companyId={}", answeredBy, companyId);
