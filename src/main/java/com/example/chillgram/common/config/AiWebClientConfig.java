@@ -16,15 +16,17 @@ import java.time.Duration;
 public class AiWebClientConfig {
 
     @Bean
-    @ConditionalOnProperty(name = "ai.base-url")
-    public WebClient aiWebClient(@Value("${ai.base-url}") String aiBaseUrl) {
+    public WebClient aiWebClient(
+            WebClient.Builder builder,
+            @Value("${ai.base-url}") String aiBaseUrl
+    ) {
         HttpClient httpClient = HttpClient.create()
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 2000)
                 .responseTimeout(Duration.ofSeconds(10))
                 .doOnConnected(conn -> conn.addHandlerLast(new ReadTimeoutHandler(10)));
 
-        return WebClient.builder()
-                .baseUrl(aiBaseUrl) // 예: http://localhost:8000
+        return builder
+                .baseUrl(aiBaseUrl)
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .build();
     }
