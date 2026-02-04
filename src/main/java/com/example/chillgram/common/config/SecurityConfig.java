@@ -63,7 +63,7 @@ public class SecurityConfig {
 
                     // Q&A 조회 API 공개 (질문 목록, 질문 상세)
                     ex.pathMatchers(HttpMethod.GET, "/api/qs/questions").permitAll();
-                    ex.pathMatchers(HttpMethod.GET, "/api/qs/questions/**").permitAll();
+                    ex.pathMatchers(HttpMethod.GET, "/api/users/hello").permitAll();
 
                     if (isProd) {
                         ex.pathMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").denyAll();
