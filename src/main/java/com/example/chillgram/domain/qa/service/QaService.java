@@ -325,14 +325,22 @@ public class QaService {
                                         String finalStatus = (status != null && !status.isBlank()) ? status
                                                         : question.getStatus();
 
+                                        // title이 null이거나 비어있으면 기존값 유지
+                                        String finalTitle = (title != null && !title.isBlank()) ? title
+                                                        : question.getTitle();
+
+                                        // content가 null이거나 비어있으면 기존값 유지
+                                        String finalContent = (content != null && !content.isBlank()) ? content
+                                                        : question.getBody();
+
                                         // 수정된 질문 생성 (R2DBC는 불변 객체)
                                         QaQuestion updatedQuestion = QaQuestion.builder()
                                                         .questionId(question.getQuestionId())
                                                         .companyId(question.getCompanyId())
                                                         .categoryId(finalCategoryId)
                                                         .createdBy(question.getCreatedBy())
-                                                        .title(title)
-                                                        .body(content)
+                                                        .title(finalTitle)
+                                                        .body(finalContent)
                                                         .status(finalStatus) // 상태 변경 적용
                                                         .viewCount(question.getViewCount())
                                                         .createdAt(question.getCreatedAt())

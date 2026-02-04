@@ -83,10 +83,8 @@ public class QaHandler {
                                 String title = getFormValue(partMap, "title");
                                 String content = getFormValue(partMap, "body"); // 프론트: body
 
-                                // 기본값 1L 설정 (FK 에러 방지)
+                                // 기본값 1L 설정 (FK 에러 방지) -> 제거하고 필수값 검증으로 변경
                                 Long categoryId = parseLongSafe(getFormValue(partMap, "category"));
-                                if (categoryId == null)
-                                    categoryId = 1L;
 
                                 log.info(
                                         "Create Question Params: title={}, content={}, categoryId={}, companyId={}, createdBy={}",
@@ -97,12 +95,14 @@ public class QaHandler {
                                 FilePart file = (filePart instanceof FilePart) ? (FilePart) filePart : null;
 
                                 // 3. 필수값 검증
-                                if (title.isBlank() || content.isBlank()) {
+                                if (title.isBlank() || content.isBlank() || categoryId == null) {
                                     String missing = "";
                                     if (title.isBlank())
                                         missing += "title ";
                                     if (content.isBlank())
                                         missing += "content ";
+                                    if (categoryId == null)
+                                        missing += "category ";
                                     log.warn("Missing required fields: {}", missing);
                                     return ServerResponse.badRequest()
                                             .contentType(MediaType.APPLICATION_JSON)
@@ -115,6 +115,12 @@ public class QaHandler {
                                                 .contentType(MediaType.APPLICATION_JSON)
                                                 .bodyValue(response));
                             });
+                })
+                .onErrorResume(ApiException.class, e -> {
+                    log.error("API Error during create question: code={}, message={}", e.errorCode(), e.getMessage());
+                    return ServerResponse.status(e.errorCode().httpStatus())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .bodyValue(Map.of("error", e.getMessage()));
                 })
                 .onErrorResume(e -> {
                     log.error("Failed to create question", e);
@@ -148,6 +154,12 @@ public class QaHandler {
                 .flatMap(response -> ServerResponse.ok()
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(response))
+                .onErrorResume(ApiException.class, e -> {
+                    log.error("API Error during get question list: code={}, message={}", e.errorCode(), e.getMessage());
+                    return ServerResponse.status(e.errorCode().httpStatus())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .bodyValue(Map.of("error", e.getMessage()));
+                })
                 .onErrorResume(e -> {
                     log.error("Failed to get question list", e);
                     return ServerResponse.badRequest()
@@ -181,6 +193,13 @@ public class QaHandler {
                 .flatMap(response -> ServerResponse.ok()
                         .contentType(MediaType.APPLICATION_JSON)
                         .bodyValue(response))
+                .onErrorResume(ApiException.class, e -> {
+                    log.error("API Error during get question detail: code={}, message={}", e.errorCode(),
+                            e.getMessage());
+                    return ServerResponse.status(e.errorCode().httpStatus())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .bodyValue(Map.of("error", e.getMessage()));
+                })
                 .onErrorResume(e -> {
                     log.error("Failed to get question detail", e);
                     return ServerResponse.notFound().build();
@@ -239,6 +258,12 @@ public class QaHandler {
                                                 .contentType(MediaType.APPLICATION_JSON)
                                                 .bodyValue(response));
                             });
+                })
+                .onErrorResume(ApiException.class, e -> {
+                    log.error("API Error during create answer: code={}, message={}", e.errorCode(), e.getMessage());
+                    return ServerResponse.status(e.errorCode().httpStatus())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .bodyValue(Map.of("error", e.getMessage()));
                 })
                 .onErrorResume(e -> {
                     log.error("Failed to create answer", e);
@@ -324,23 +349,21 @@ public class QaHandler {
                             // -> 서비스 레이어에서 "빈 문자열이면 기존값 유지" 로직이 필요하거나,
                             // 프론트에서 수정 안할 필드는 안 보내야 함(근데 multipart라 다 보낼 수도).
 
-                            // 일단 기존 로직 유지하되 status 파라미터 추가 전달
-                            if (title == null || title.isBlank()) {
-                                return ServerResponse.badRequest()
-                                        .contentType(MediaType.APPLICATION_JSON)
-                                        .bodyValue(Map.of("error", "제목을 입력해주세요"));
-                            }
-                            if (content == null || content.isBlank()) {
-                                return ServerResponse.badRequest()
-                                        .contentType(MediaType.APPLICATION_JSON)
-                                        .bodyValue(Map.of("error", "내용을 입력해주세요"));
-                            }
+                            // 필수값 검증 로직 제거 -> 서비스 레이어에서 처리 (부분 수정 지원)
+                            // title/content가 없으면 기존값 유지.
 
                             return qaService
                                     .updateQuestion(questionId, title, content, categoryId, status, userId, file)
                                     .flatMap(response -> ServerResponse.ok()
                                             .contentType(MediaType.APPLICATION_JSON)
                                             .bodyValue(response));
+                        })
+                        .onErrorResume(ApiException.class, e -> {
+                            log.error("API Error during update question: code={}, message={}", e.errorCode(),
+                                    e.getMessage());
+                            return ServerResponse.status(e.errorCode().httpStatus())
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .bodyValue(Map.of("error", e.getMessage()));
                         })
                         .onErrorResume(e -> {
                             log.error("Failed to update question", e);
@@ -385,6 +408,13 @@ public class QaHandler {
                                     .flatMap(response -> ServerResponse.ok()
                                             .contentType(MediaType.APPLICATION_JSON)
                                             .bodyValue(response));
+                        })
+                        .onErrorResume(ApiException.class, e -> {
+                            log.error("API Error during update answer: code={}, message={}", e.errorCode(),
+                                    e.getMessage());
+                            return ServerResponse.status(e.errorCode().httpStatus())
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .bodyValue(Map.of("error", e.getMessage()));
                         })
                         .onErrorResume(e -> {
                             log.error("Failed to update answer", e);
