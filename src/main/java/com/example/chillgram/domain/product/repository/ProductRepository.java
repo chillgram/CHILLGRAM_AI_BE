@@ -10,19 +10,22 @@ import reactor.core.publisher.Mono;
 @Repository
 public interface ProductRepository extends R2dbcRepository<Product, Long> {
 
-    // For Dashboard Stats
-    Mono<Long> countByCompanyId(Long companyId);
+        // For Dashboard Stats
+        Mono<Long> countByCompanyId(Long companyId);
 
-    Mono<Long> countByCompanyIdAndIsActiveTrue(Long companyId);
+        @org.springframework.data.r2dbc.repository.Query("SELECT COUNT(*) FROM product WHERE company_id = :companyId AND is_active = true")
+        Mono<Long> countByCompanyIdAndIsActiveTrue(Long companyId);
 
-    Mono<Long> countByCompanyIdAndIsActiveFalse(Long companyId);
+        @org.springframework.data.r2dbc.repository.Query("SELECT COUNT(*) FROM product WHERE company_id = :companyId AND is_active = false")
+        Mono<Long> countByCompanyIdAndIsActiveFalse(Long companyId);
 
-    // For List with Search
-    Flux<Product> findAllByCompanyIdOrderByCreatedAtDesc(Long companyId, Pageable pageable);
+        // For List with Search
+        Flux<Product> findAllByCompanyIdOrderByCreatedAtDesc(Long companyId, Pageable pageable);
 
-    Flux<Product> findByCompanyIdAndNameContainingIgnoreCaseOrDescriptionContainingIgnoreCase(Long companyId,
-            String name, String description, Pageable pageable);
+        Flux<Product> findByCompanyIdAndNameContainingIgnoreCaseOrDescriptionContainingIgnoreCase(Long companyId,
+                        String name, String description, Pageable pageable);
 
-    Mono<Long> countByCompanyIdAndNameContainingIgnoreCaseOrDescriptionContainingIgnoreCase(Long companyId, String name,
-            String description);
+        Mono<Long> countByCompanyIdAndNameContainingIgnoreCaseOrDescriptionContainingIgnoreCase(Long companyId,
+                        String name,
+                        String description);
 }

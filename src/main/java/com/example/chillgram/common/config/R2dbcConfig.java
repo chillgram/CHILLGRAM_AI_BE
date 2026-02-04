@@ -1,46 +1,64 @@
 package com.example.chillgram.common.config;
 
+import io.r2dbc.spi.ConnectionFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.data.convert.ReadingConverter;
 import org.springframework.data.convert.WritingConverter;
+import org.springframework.data.domain.ReactiveAuditorAware;
+import org.springframework.data.r2dbc.config.AbstractR2dbcConfiguration;
+import org.springframework.data.r2dbc.config.EnableR2dbcAuditing;
 import org.springframework.data.r2dbc.convert.R2dbcCustomConversions;
-import org.springframework.data.r2dbc.dialect.MySqlDialect;
+import org.springframework.r2dbc.connection.R2dbcTransactionManager;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.ReactiveSecurityContextHolder;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.transaction.ReactiveTransactionManager;
 
 import java.util.ArrayList;
 import java.util.List;
 
 @Configuration
-public class R2dbcConfig {
+@EnableR2dbcAuditing
+public class R2dbcConfig extends AbstractR2dbcConfiguration {
+
+    private final ConnectionFactory connectionFactory;
+
+    public R2dbcConfig(ConnectionFactory connectionFactory) {
+        this.connectionFactory = connectionFactory;
+    }
+
+    @Override
+    public ConnectionFactory connectionFactory() {
+        return this.connectionFactory;
+    }
 
     @Bean
+    public ReactiveTransactionManager transactionManager(ConnectionFactory connectionFactory) {
+        return new R2dbcTransactionManager(connectionFactory);
+    }
+
+    // -------------------------------------------------------------------------
+    // 1. Auditing (created_by 자동 입력)
+    // -------------------------------------------------------------------------
+    @Bean
+    public ReactiveAuditorAware<Long> auditorAware() {
+        return () -> ReactiveSecurityContextHolder.getContext()
+                .map(SecurityContext::getAuthentication)
+                .filter(Authentication::isAuthenticated)
+                .map(Authentication::getPrincipal)
+                .filter(p -> p instanceof Long)
+                .map(p -> (Long) p);
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. Custom Converters (원하시는 Mapping 방식)
+    // -------------------------------------------------------------------------
+    @Override
     public R2dbcCustomConversions r2dbcCustomConversions() {
         List<Converter<?, ?>> converters = new ArrayList<>();
-        converters.add(new BooleanToByteConverter());
-        converters.add(new ByteToBooleanConverter());
-        return R2dbcCustomConversions.of(MySqlDialect.INSTANCE, converters);
-    }
-
-    /**
-     * Writing Converter: Boolean -> Byte (DB 저장 시)
-     */
-    @WritingConverter
-    public static class BooleanToByteConverter implements Converter<Boolean, Byte> {
-        @Override
-        public Byte convert(Boolean source) {
-            return (byte) (Boolean.TRUE.equals(source) ? 1 : 0);
-        }
-    }
-
-    /**
-     * Reading Converter: Byte -> Boolean (DB 조회 시)
-     */
-    @ReadingConverter
-    public static class ByteToBooleanConverter implements Converter<Byte, Boolean> {
-        @Override
-        public Boolean convert(Byte source) {
-            return source != 0;
-        }
+        // 필요한 경우 여기에 커스텀 컨버터 추가 (현재는 표준 매핑 사용)
+        return R2dbcCustomConversions.of(dialects().getDialect(connectionFactory), converters);
     }
 }
