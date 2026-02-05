@@ -1,5 +1,7 @@
 package com.example.chillgram.domain.ai.service;
 
+import com.example.chillgram.domain.ai.dto.AdGuideAiRequest;
+import com.example.chillgram.domain.ai.dto.AdGuideAiResponse;
 import com.example.chillgram.domain.ai.dto.FinalCopyRequest;
 import com.example.chillgram.domain.ai.dto.FinalCopyResponse;
 import com.example.chillgram.domain.ai.dto.GuidelineRequest;
@@ -8,6 +10,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,6 +24,7 @@ import java.util.regex.Pattern;
 @Slf4j
 @Service
 public class AdCopyService {
+
     private final ChatClient chatClient;
 
     public AdCopyService(ObjectProvider<ChatClient> chatClientProvider) {
@@ -33,9 +38,112 @@ public class AdCopyService {
         }
     }
 
+    // =========================================================
+    // 신규: 광고 가이드라인 생성 (ad-guides 전용)
+    // =========================================================
+
     /**
-     * 1단계: 키워드 기반 가이드라인 5개 생성
+     * WebFlux에서 안전하게 쓰기 위한 Reactive 래퍼
+     * - ChatClient 호출이 블로킹될 수 있으므로 boundedElastic로 분리
      */
+    public Mono<AdGuideAiResponse> generateAdGuidesMono(AdGuideAiRequest request) {
+        return Mono.fromCallable(() -> generateAdGuides(request))
+                .subscribeOn(Schedulers.boundedElastic());
+    }
+
+    /**
+     * 광고 가이드라인 생성(동기)
+     * - GUIDE_START/END 포맷 강제
+     * - 섹션/내용 파싱하여 구조화 반환
+     */
+    public AdGuideAiResponse generateAdGuides(AdGuideAiRequest request) {
+        checkAiEnabled();
+
+        String prompt = """
+                당신은 한국 시장의 퍼포먼스 마케터이자 카피라이터입니다.
+                아래 입력을 바탕으로 '광고 가이드라인'을 작성하세요.
+                반드시 지정된 포맷을 지키세요. 포맷을 어기면 실패로 간주됩니다.
+
+                [GUIDE_START]
+                섹션: 핵심 메시지
+                내용: (1문장 + 서브 메시지 3개)
+                섹션: 타깃/상황
+                내용: (2~3줄)
+                섹션: 톤&매너(Do/Don't)
+                내용: (Do 3개 / Don't 3개)
+                섹션: 금지표현/리스크 체크
+                내용: (체크리스트 형태)
+                섹션: 플랫폼별 변형(인스타/배너/쇼츠)
+                내용: (각 3줄씩)
+                섹션: A/B 테스트 아이디어(가설 포함)
+                내용: (5개)
+                [GUIDE_END]
+
+                [입력]
+                - productId: %d
+                - 상품명: %s
+                - baseDate: %s
+                - 프로젝트 제목: %s
+                - 광고 목표: %s
+                - 요청문: %s
+                - 선택 키워드: %s
+                - 광고 초점: %s
+
+                [트렌드]
+                - 트렌드 키워드: %s
+                - 해시태그: %s
+                - 스타일 요약: %s
+                """.formatted(
+                request.productId(),
+                request.productName(),
+                request.baseDate(),
+                request.projectTitle(),
+                request.adGoal(),
+                request.requestText(),
+                request.selectedKeywords(),
+                request.adFocus(),
+                request.trendKeywords(),
+                request.hashtags(),
+                request.styleSummary()
+        );
+
+        String response = chatClient.prompt().user(prompt).call().content();
+        log.info("광고 가이드라인 생성 응답: {}", response);
+
+        return parseGuideSections(response);
+    }
+
+    private AdGuideAiResponse parseGuideSections(String response) {
+        String clean = (response == null ? "" : response).replaceAll("\\*\\*", "");
+        String body = clean;
+
+        Matcher range = Pattern.compile("(?s)\\[GUIDE_START\\](.*?)\\[GUIDE_END\\]").matcher(clean);
+        if (range.find()) body = range.group(1);
+
+        List<AdGuideAiResponse.Section> sections = new ArrayList<>();
+
+        Pattern p = Pattern.compile("(?s)섹션\\s*:\\s*(.*?)\\n\\s*내용\\s*:\\s*(.*?)(?=\\n\\s*섹션\\s*:|$)");
+        Matcher m = p.matcher(body);
+
+        while (m.find()) {
+            String section = m.group(1).trim();
+            String content = m.group(2).trim();
+            if (!section.isBlank() && !content.isBlank()) {
+                sections.add(new AdGuideAiResponse.Section(section, content));
+            }
+        }
+
+        if (sections.isEmpty()) {
+            sections.add(new AdGuideAiResponse.Section("가이드라인", clean.trim()));
+        }
+
+        return new AdGuideAiResponse(sections);
+    }
+
+    // =========================================================
+    // 기존: 1단계 키워드 기반 가이드라인 5개 생성
+    // =========================================================
+
     public GuidelineResponse generateGuidelines(GuidelineRequest request) {
         checkAiEnabled();
 
@@ -61,9 +169,10 @@ public class AdCopyService {
         return new GuidelineResponse(request.keyword(), guidelines);
     }
 
-    /**
-     * 2단계: 가이드라인 기반 최종 카피 및 프롬프트 생성
-     */
+    // =========================================================
+    // 기존: 2단계 최종 카피 생성
+    // =========================================================
+
     public FinalCopyResponse generateFinalCopy(FinalCopyRequest request) {
         checkAiEnabled();
 
@@ -103,8 +212,7 @@ public class AdCopyService {
 
         for (String block : blocks) {
             String cleanBlock = block.split("\\[가이드라인 끝\\]")[0];
-            if (cleanBlock.trim().length() < 10)
-                continue;
+            if (cleanBlock.trim().length() < 10) continue;
 
             try {
                 int id = Integer.parseInt(extractValue(cleanBlock, "ID").replaceAll("[^0-9]", ""));
@@ -121,7 +229,6 @@ public class AdCopyService {
     }
 
     private FinalCopyResponse parseFinalResponse(String productName, String concept, String response) {
-        // 모든 마크다운 굵게 표시(**) 제거하여 파싱 방해 요소 제거
         String cleanResponse = response.replaceAll("\\*\\*", "");
 
         String copy = extractByTag(cleanResponse, "COPY");
@@ -130,17 +237,11 @@ public class AdCopyService {
         String sns = extractByTag(cleanResponse, "SNS");
         String reason = extractByTag(cleanResponse, "REASON");
 
-        // 만약 태그 파싱에 실패했다면 (LLM이 형식을 안 지킨 경우) 폴백 로직
-        if (copy.isEmpty())
-            copy = extractSectionFallback(cleanResponse, "광고 카피");
-        if (shortform.isEmpty())
-            shortform = extractSectionFallback(cleanResponse, "숏폼 프롬프트");
-        if (banner.isEmpty())
-            banner = extractSectionFallback(cleanResponse, "배너 프롬프트");
-        if (sns.isEmpty())
-            sns = extractSectionFallback(cleanResponse, "SNS 캡션");
-        if (reason.isEmpty())
-            reason = extractSectionFallback(cleanResponse, "선정 이유");
+        if (copy.isEmpty()) copy = extractSectionFallback(cleanResponse, "광고 카피");
+        if (shortform.isEmpty()) shortform = extractSectionFallback(cleanResponse, "숏폼 프롬프트");
+        if (banner.isEmpty()) banner = extractSectionFallback(cleanResponse, "배너 프롬프트");
+        if (sns.isEmpty()) sns = extractSectionFallback(cleanResponse, "SNS 캡션");
+        if (reason.isEmpty()) reason = extractSectionFallback(cleanResponse, "선정 이유");
 
         return FinalCopyResponse.of(productName, concept, copy, shortform, banner, sns, reason);
     }

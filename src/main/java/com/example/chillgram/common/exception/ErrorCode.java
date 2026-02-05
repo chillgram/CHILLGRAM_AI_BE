@@ -24,13 +24,30 @@ public enum ErrorCode {
     ACCOUNT_DORMANT(HttpStatus.FORBIDDEN, "휴면 계정입니다. 휴면 해제가 필요합니다."),
     ACCOUNT_DELETED(HttpStatus.FORBIDDEN, "탈퇴 처리된 계정입니다."),
 
-    // auth (500) - 데이터 이상
-    ACCOUNT_STATUS_INVALID(HttpStatus.INTERNAL_SERVER_ERROR, "계정 상태를 확인할 수 없습니다. 잠시 후 다시 시도해주세요."),
-
-
-    // 404/409
+    // 404/409,
+    AD_PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND, "광고 대상 제품을 찾을 수 없습니다."),
     NOT_FOUND(HttpStatus.NOT_FOUND, "리소스를 찾을 수 없습니다."),
     CONFLICT(HttpStatus.CONFLICT, "요청이 현재 상태와 충돌합니다."),
+    AD_GUIDE_GENERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "광고 가이드 생성에 실패했습니다."),
+
+    AD_COPY_GENERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "광고 문구 생성에 실패했습니다."),
+    AD_GUIDE_REQUIRED(HttpStatus.BAD_REQUEST, "guideId는 필수입니다."),
+    AD_COPIES_EMPTY(HttpStatus.INTERNAL_SERVER_ERROR, "광고 문구 생성 결과가 비어있습니다."),
+    AI_UPSTREAM_ERROR(HttpStatus.BAD_GATEWAY, "AI 서버 호출에 실패했습니다."),
+
+    // 400
+    AD_FOCUS_REQUIRED(HttpStatus.BAD_REQUEST, "adFocus는 필수입니다."),
+    KEYWORDS_REQUIRED(HttpStatus.BAD_REQUEST, "selectedKeywords는 필수입니다."),
+    PROJECT_TITLE_REQUIRED(HttpStatus.BAD_REQUEST, "projectTitle은 필수입니다."),
+    AD_GOAL_REQUIRED(HttpStatus.BAD_REQUEST, "adGoal은 필수입니다."),
+
+    // 502/500
+    AI_DISABLED(HttpStatus.SERVICE_UNAVAILABLE, "AI 서비스가 비활성화되어 있습니다."),
+    AI_CALL_FAILED(HttpStatus.BAD_GATEWAY, "AI 서버 호출에 실패했습니다."),
+    AD_GUIDELINES_EMPTY(HttpStatus.INTERNAL_SERVER_ERROR, "가이드라인 생성 결과가 비어있습니다."),
+
+    // auth (500) - 데이터 이상
+    ACCOUNT_STATUS_INVALID(HttpStatus.INTERNAL_SERVER_ERROR, "계정 상태를 확인할 수 없습니다. 잠시 후 다시 시도해주세요."),
 
     // 502/503 (외부 연동)
     UPSTREAM_ERROR(HttpStatus.BAD_GATEWAY, "외부 시스템 오류입니다."),

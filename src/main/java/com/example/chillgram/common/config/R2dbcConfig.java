@@ -1,11 +1,10 @@
 package com.example.chillgram.common.config;
 
 import io.r2dbc.spi.ConnectionFactory;
+import org.jspecify.annotations.NonNull;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
-import org.springframework.data.convert.ReadingConverter;
-import org.springframework.data.convert.WritingConverter;
 import org.springframework.data.domain.ReactiveAuditorAware;
 import org.springframework.data.r2dbc.config.AbstractR2dbcConfiguration;
 import org.springframework.data.r2dbc.config.EnableR2dbcAuditing;
@@ -14,7 +13,7 @@ import org.springframework.r2dbc.connection.R2dbcTransactionManager;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.core.context.SecurityContext;
-import org.springframework.transaction.ReactiveTransactionManager;
+import org.springframework.transaction.reactive.TransactionalOperator;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,13 +29,18 @@ public class R2dbcConfig extends AbstractR2dbcConfiguration {
     }
 
     @Override
-    public ConnectionFactory connectionFactory() {
+    public @NonNull ConnectionFactory connectionFactory() {
         return this.connectionFactory;
     }
 
     @Bean
-    public ReactiveTransactionManager transactionManager(ConnectionFactory connectionFactory) {
-        return new R2dbcTransactionManager(connectionFactory);
+    public R2dbcTransactionManager r2dbcTransactionManager(ConnectionFactory cf) {
+        return new R2dbcTransactionManager(cf);
+    }
+
+    @Bean
+    public TransactionalOperator transactionalOperator(R2dbcTransactionManager tm) {
+        return TransactionalOperator.create(tm);
     }
 
     // -------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 package com.example.chillgram.domain.product.router;
 
+import com.example.chillgram.domain.advertising.handler.AdHandler;
 import com.example.chillgram.domain.product.dto.ProductCreateRequest;
 import com.example.chillgram.domain.product.dto.ProductUpdateRequest;
 import com.example.chillgram.domain.product.handler.ProductHandler;
@@ -41,9 +42,23 @@ public class ProductRouter {
             // ==========================================
             @RouterOperation(path = "/api/products", method = RequestMethod.POST, beanClass = ProductHandler.class, beanMethod = "createProduct", operation = @Operation(summary = "제품 등록", description = "새로운 제품을 등록합니다.", tags = "Product", requestBody = @RequestBody(content = @Content(schema = @Schema(implementation = ProductCreateRequest.class))))),
             @RouterOperation(path = "/api/products/{id}", method = RequestMethod.PUT, beanClass = ProductHandler.class, beanMethod = "updateProduct", operation = @Operation(summary = "제품 수정", description = "기존 제품 정보를 수정합니다. null인 필드는 기존 값을 유지합니다.", tags = "Product", parameters = @Parameter(name = "id", description = "제품 ID", in = ParameterIn.PATH), requestBody = @RequestBody(content = @Content(schema = @Schema(implementation = ProductUpdateRequest.class))))),
-            @RouterOperation(path = "/api/products/{id}", method = RequestMethod.DELETE, beanClass = ProductHandler.class, beanMethod = "deleteProduct", operation = @Operation(summary = "제품 삭제", description = "제품을 삭제합니다.", tags = "Product", parameters = @Parameter(name = "id", description = "제품 ID", in = ParameterIn.PATH)))
+            @RouterOperation(path = "/api/products/{id}", method = RequestMethod.DELETE, beanClass = ProductHandler.class, beanMethod = "deleteProduct", operation = @Operation(summary = "제품 삭제", description = "제품을 삭제합니다.", tags = "Product", parameters = @Parameter(name = "id", description = "제품 ID", in = ParameterIn.PATH))),
+            @RouterOperation(
+                    path = "/api/v1/products/{id}/ad-trends",
+                    method = RequestMethod.GET,
+                    beanClass = ProductHandler.class,
+                    beanMethod = "getAdTrends",
+                    operation = @Operation(
+                            summary = "제품 광고 트렌드 분석 조회",
+                            parameters = {
+                                    @Parameter(name = "id", in = ParameterIn.PATH, required = true),
+                                    @Parameter(name = "date", in = ParameterIn.QUERY, required = false, example = "2026-02-10")
+                            },
+                            tags = {"Product"}
+                    )
+            )
     })
-    public RouterFunction<ServerResponse> productRoutes(ProductHandler productHandler) {
+    public RouterFunction<ServerResponse> productRoutes(ProductHandler productHandler, AdHandler adHandler) {
         return RouterFunctions.route()
                 .path("/api/products", builder -> builder
                         // ==========================================
@@ -93,7 +108,20 @@ public class ProductRouter {
                         // Flow: Router → Handler.deleteProduct → Service.deleteProduct →
                         // Repository.findById → Repository.deleteById
                         // Response: 204 No Content or 404 Not Found
-                        .route(DELETE("/{id}"), productHandler::deleteProduct))
+                        .route(DELETE("/{id}"), productHandler::deleteProduct)
+
+                        /**
+                         * 광고 트렌드 분석 조회
+                         * 제품 ID와 선택적 컨텍스트(기준 날짜)를 기반으로광고에 활용할 "가장 가까운 이벤트 5개"를 제공
+                         *
+                         * POST /api/v1/products/{id}/ad-trends
+                         * @return 가까운 이벤트 5개 목록
+                         */
+                        .route(POST("/{id}/ad-trends"), adHandler::getAdTrends)
+                        .route(POST("/{id}/ad-guides"), adHandler::createAdGuides)
+                        .route(POST("/{id}/ad-copies"), adHandler::createAdCopies)
+                        .route(POST("/{id}/ads"), adHandler::createAdProjectAndContents)
+                )
                 .build();
     }
 }
