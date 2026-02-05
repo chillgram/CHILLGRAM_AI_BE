@@ -2,13 +2,11 @@ package com.example.chillgram.domain.product.dto;
 
 import com.example.chillgram.domain.product.entity.Product;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-
-import java.math.BigDecimal;
 
 /**
  * 제품 등록 요청 DTO
@@ -37,12 +35,6 @@ public class ProductCreateRequest {
     private String description;
 
     /**
-     * 가격 (필수)
-     */
-    @NotNull(message = "가격은 필수입니다")
-    private BigDecimal price;
-
-    /**
      * 활성화 여부 (기본값: true)
      */
     @Builder.Default
@@ -57,7 +49,7 @@ public class ProductCreateRequest {
                 .name(this.name)
                 .category(this.category)
                 .description(this.description)
-                .price(this.price)
+
                 .isActive(this.isActive != null ? this.isActive : true)
                 .createdBy(createdBy)
                 .build();

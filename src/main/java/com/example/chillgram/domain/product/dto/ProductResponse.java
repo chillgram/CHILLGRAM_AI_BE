@@ -4,7 +4,6 @@ import com.example.chillgram.domain.product.entity.Product;
 import lombok.Builder;
 import lombok.Data;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
@@ -15,7 +14,7 @@ public class ProductResponse {
     private String name;
     private String category;
     private String description;
-    private BigDecimal price;
+
     private Boolean isActive;
     private Long createdBy;
     private String createdByName; // Added for enrichment
@@ -30,7 +29,7 @@ public class ProductResponse {
                 .name(product.getName())
                 .category(product.getCategory())
                 .description(product.getDescription())
-                .price(product.getPrice())
+
                 .isActive(product.getIsActive())
                 .createdBy(product.getCreatedBy())
                 // createdByName and companyName should be set by the service
