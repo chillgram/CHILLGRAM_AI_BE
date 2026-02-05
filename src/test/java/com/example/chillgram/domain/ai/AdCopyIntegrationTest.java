@@ -54,7 +54,6 @@ class AdCopyIntegrationTest {
         FinalCopyRequest request = new FinalCopyRequest(
                 "새우깡",
                 "매운맛 챌린지",
-                3,
                 "새우깡 맵부심 챌린지",
                 "나만의 매운 소스 + 새우깡 조합",
                 "유머러스한");

@@ -9,7 +9,6 @@ import jakarta.validation.constraints.NotNull;
 public record FinalCopyRequest(
         @NotBlank(message = "상품명은 필수입니다") String productName,
         @NotBlank(message = "키워드는 필수입니다") String keyword,
-        @NotNull(message = "가이드라인 ID는 필수입니다") Integer guidelineId,
         String selectedConcept,
         String selectedDescription,
         String tone) {
