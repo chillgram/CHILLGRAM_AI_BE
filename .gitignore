@@ -35,3 +35,6 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### Uploads (로컬/서버 업로드 폴더) ###
+uploads/
