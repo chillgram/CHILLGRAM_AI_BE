@@ -24,5 +24,9 @@ public class WebConfig implements WebFluxConfigurer {
         // file:/// 접두어는 로컬 파일 시스템을 의미합니다.
         registry.addResourceHandler("/qna/**")
                 .addResourceLocations("file:///app/uploads/qna/");
+
+        // 프로젝트 이미지 정적 파일 서빙
+        registry.addResourceHandler("/projects/**")
+                .addResourceLocations("file:///app/uploads/projects/");
     }
 }

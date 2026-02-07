@@ -9,6 +9,8 @@ public record ProjectResponse(
         String title,
         String type,
         String status,
+        Integer adMessageFocus,
+        Integer adMessageTarget,
         Long contentCount,
         LocalDateTime createdAt) {
     public static ProjectResponse of(Project project, Long contentCount) {
@@ -17,6 +19,8 @@ public record ProjectResponse(
                 project.getTitle(),
                 project.getProjectType() != null ? project.getProjectType().name() : null,
                 project.getStatus(),
+                project.getAdMessageFocus(),
+                project.getAdMessageTarget(),
                 contentCount,
                 project.getCreatedAt());
     }

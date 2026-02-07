@@ -39,6 +39,12 @@ public class Project {
     @Column("description")
     private String description;
 
+    @Column("ad_message_focus")
+    private Integer adMessageFocus; // 0: 트렌드 ~ 4: 제품 특징
+
+    @Column("ad_message_target")
+    private Integer adMessageTarget; // 0: 인지 ~ 4: 행동
+
     @Column("status")
     private String status; // 또는 Enum
 
