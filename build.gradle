@@ -74,9 +74,13 @@ dependencies {
 	implementation "org.springdoc:springdoc-openapi-starter-webflux-ui:2.8.15"
 
 	// GCP Secret Manager
-    implementation platform("io.grpc:grpc-bom:1.70.0")
-    implementation "com.google.cloud:google-cloud-secretmanager:2.45.0"
-    implementation "io.grpc:grpc-netty-shaded"
+    // GCP 라이브러리 간의 버전을 알아서 맞춰주는 BOM 추가 (권장)
+    implementation platform("com.google.cloud:libraries-bom:26.50.0")
+    implementation "com.google.cloud:google-cloud-secretmanager"
+    // gRPC 설정 (spring의 netty를 활용)
+    implementation "io.grpc:grpc-netty"
+    implementation "io.grpc:grpc-stub"
+    implementation "io.grpc:grpc-protobuf"
 }
 
 tasks.named('test') {

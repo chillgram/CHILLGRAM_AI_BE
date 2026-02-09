@@ -31,6 +31,7 @@ public class YoutubeTokenStore {
 
     // GCP 프로젝트 ID 등 설정값
     private final SocialProperties props;
+    private final SecretManagerServiceClient client;
 
     // 토큰을 Secret Manager에 저장하고 secret 경로(projects/.../secrets/...)를 반환
     public Mono<String> save(long companyId, OAuthTokenPayload payload) {
@@ -49,14 +50,12 @@ public class YoutubeTokenStore {
         String projectId = props.gcp().projectId();
         if (projectId == null || projectId.isBlank()) throw new IllegalStateException("social.gcp.project-id 비어있음");
 
-        // 회사별로 secret 하나를 두고, 토큰 갱신 시마다 version을 추가하는 방식
         String secretId = "yt-company-" + companyId;
+        ProjectName parent = ProjectName.of(projectId);
+        SecretName secretName = SecretName.of(projectId, secretId);
 
-        try (SecretManagerServiceClient client = SecretManagerServiceClient.create()) {
-            ProjectName parent = ProjectName.of(projectId);
-            SecretName secretName = SecretName.of(projectId, secretId);
-
-            // secret이 없으면 생성
+        try {
+            // 1. Secret 생성 (이미 있으면 pass)
             try {
                 client.createSecret(parent, secretId, Secret.newBuilder()
                         .setReplication(Replication.newBuilder()
@@ -65,12 +64,11 @@ public class YoutubeTokenStore {
                         .build());
             } catch (AlreadyExistsException ignored) {}
 
-            // 새 버전으로 토큰 데이터 저장(JSON bytes)
+            // 2. 새 버전 추가 (기존 연결을 재사용하므로 매우 빠름)
             client.addSecretVersion(secretName, SecretPayload.newBuilder()
                     .setData(ByteString.copyFrom(payload.toJsonBytes()))
                     .build());
 
-            // DB에는 secretName(tokenRef)만 저장해두고, 읽을 때 /versions/latest로 접근
             return secretName.toString();
         } catch (Exception e) {
             throw new IllegalStateException("Secret Manager 저장 실패", e);
@@ -81,7 +79,8 @@ public class YoutubeTokenStore {
     private Optional<OAuthTokenPayload> readLatestBlocking(String tokenRef) {
         String versionPath = tokenRef.endsWith("/versions/latest") ? tokenRef : tokenRef + "/versions/latest";
 
-        try (SecretManagerServiceClient client = SecretManagerServiceClient.create()) {
+        try {
+            // 기존 연결을 재사용하여 최신 버전 조회
             AccessSecretVersionResponse res = client.accessSecretVersion(SecretVersionName.parse(versionPath));
             return Optional.of(OAuthTokenPayload.fromJsonBytes(res.getPayload().getData().toByteArray()));
         } catch (Exception e) {
