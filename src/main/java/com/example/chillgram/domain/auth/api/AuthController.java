@@ -81,10 +81,11 @@ public class AuthController {
                     }
 
                     long userId = u.getUserId();
+                    long companyId = u.getCompanyId();
                     String role = normalizeRole(u.getRole());
 
-                    String access = jwt.createAccessToken(userId, role);
-                    String refresh = jwt.createRefreshToken(userId, role);
+                    String access = jwt.createAccessToken(userId, companyId, role);
+                    String refresh = jwt.createRefreshToken(userId, companyId, role);
 
                     return refreshStore.saveHashed(userId, refresh)
                             .thenReturn(new IssuedTokens(access, refresh))
@@ -116,12 +117,13 @@ public class AuthController {
                         return Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "not refresh token"));
                     }
                     long userId = jwt.getUserId(jws);
+                    long companyId = jwt.getCompanyId(jws);
                     String role = jwt.getRole(jws);
 
                     return refreshStore.matches(userId, refreshToken)
                             .flatMap(ok -> {
                                 if (!ok) return Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "refresh revoked"));
-                                String newAccess = jwt.createAccessToken(userId, role);
+                                String newAccess = jwt.createAccessToken(userId, companyId, role);
                                 return Mono.just(new TokenResponse(newAccess, null));
                             });
                 });

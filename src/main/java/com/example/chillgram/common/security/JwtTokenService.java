@@ -22,41 +22,45 @@ import java.util.Map;
  */
 public final class JwtTokenService {
 
+    private static final String CLAIM_UID = "uid";
+    private static final String CLAIM_ROLE = "role";
+    private static final String CLAIM_TYP = "typ";
+    private static final String CLAIM_CID = "cid";
+
     private final JwtProperties props;
     private final SecretKey key;
 
     public JwtTokenService(JwtProperties props) {
         this.props = props;
 
-        // secret 설정 (HS256 최소 32바이트)
-        if (props.secret() == null || props.secret().isBlank() || props.secret().getBytes(StandardCharsets.UTF_8).length < 32) {
+        if (props.secret() == null || props.secret().isBlank()
+                || props.secret().getBytes(StandardCharsets.UTF_8).length < 32) {
             throw new IllegalStateException("security.jwt.secret must be at least 32 bytes");
         }
 
-        // HMAC 서명 키 생성
         this.key = Keys.hmacShaKeyFor(props.secret().getBytes(StandardCharsets.UTF_8));
     }
 
     // access 토큰 생성
-    public String createAccessToken(long userId, String role) {
-        return createToken(userId, role, "access", props.accessTtlSeconds());
+    public String createAccessToken(long userId, long companyId, String role) {
+        return createToken(userId, companyId, role, "access", props.accessTtlSeconds());
     }
 
     // refresh 토큰 생성
-    public String createRefreshToken(long userId, String role) {
-        return createToken(userId, role, "refresh", props.refreshTtlSeconds());
+    public String createRefreshToken(long userId, long companyId, String role) {
+        return createToken(userId, companyId, role, "refresh", props.refreshTtlSeconds());
     }
 
-    // 토큰 공통 생성
-    private String createToken(long userId, String role, String typ, long ttlSeconds) {
+    private String createToken(long userId, long companyId, String role, String typ, long ttlSeconds) {
         Instant now = Instant.now();
         Instant exp = now.plusSeconds(ttlSeconds);
 
         return Jwts.builder()
                 .claims(Map.of(
-                        "uid", userId,
-                        "role", role,
-                        "typ", typ
+                        CLAIM_UID, userId,
+                        CLAIM_CID, companyId,
+                        CLAIM_ROLE, role,
+                        CLAIM_TYP, typ
                 ))
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(exp))
@@ -64,7 +68,6 @@ public final class JwtTokenService {
                 .compact();
     }
 
-    // 토큰 검증 + 파싱
     public Jws<Claims> parse(String token) {
         if (token == null || token.isBlank()) {
             throw ApiException.of(ErrorCode.UNAUTHORIZED, "JWT 검증 실패: 토큰이 비어있음");
@@ -81,24 +84,28 @@ public final class JwtTokenService {
         }
     }
 
-    // uid 클레임 추출
     public long getUserId(Jws<Claims> jws) {
-        Object uid = jws.getPayload().get("uid");
-        if (uid instanceof Integer i) return i.longValue();
-        if (uid instanceof Long l) return l;
-        if (uid instanceof String s) return Long.parseLong(s);
-        throw ApiException.of(ErrorCode.UNAUTHORIZED, "JWT 클레임 오류: uid 형식이 올바르지 않음");
+        return toLongClaim(jws.getPayload().get(CLAIM_UID), "uid");
     }
 
-    // role 클레임 추출
+    public long getCompanyId(Jws<Claims> jws) {
+        return toLongClaim(jws.getPayload().get(CLAIM_CID), "cid");
+    }
+
     public String getRole(Jws<Claims> jws) {
-        Object role = jws.getPayload().get("role");
+        Object role = jws.getPayload().get(CLAIM_ROLE);
         return (role == null) ? "USER" : String.valueOf(role);
     }
 
-    // typ 클레임 추출
     public String getType(Jws<Claims> jws) {
-        Object typ = jws.getPayload().get("typ");
+        Object typ = jws.getPayload().get(CLAIM_TYP);
         return (typ == null) ? "" : String.valueOf(typ);
+    }
+
+    private long toLongClaim(Object v, String name) {
+        if (v instanceof Integer i) return i.longValue();
+        if (v instanceof Long l) return l;
+        if (v instanceof String s) return Long.parseLong(s);
+        throw ApiException.of(ErrorCode.UNAUTHORIZED, "JWT 클레임 오류: " + name + " 형식이 올바르지 않음");
     }
 }

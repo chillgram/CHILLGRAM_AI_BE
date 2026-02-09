@@ -41,6 +41,9 @@ public enum ErrorCode {
     PROJECT_TITLE_REQUIRED(HttpStatus.BAD_REQUEST, "projectTitle은 필수입니다."),
     AD_GOAL_REQUIRED(HttpStatus.BAD_REQUEST, "adGoal은 필수입니다."),
 
+    YOUTUBE_CHANNEL_NOT_FOUND(HttpStatus.UNPROCESSABLE_ENTITY, "YOUTUBE에 채널이 존재하지 않습니다. 채널을 개설 후에 다시 연결해 주세요."),
+    SOCIAL_ACCOUNT_NOT_CONNECTED(HttpStatus.BAD_REQUEST, "연결된 SNS 계정이 없습니다."),
+
     // 502/500
     AI_DISABLED(HttpStatus.SERVICE_UNAVAILABLE, "AI 서비스가 비활성화되어 있습니다."),
     AI_CALL_FAILED(HttpStatus.BAD_GATEWAY, "AI 서버 호출에 실패했습니다."),

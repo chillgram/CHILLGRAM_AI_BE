@@ -36,11 +36,13 @@ public class JwtAuthenticationManager implements ReactiveAuthenticationManager {
                     }
 
                     long userId = jwt.getUserId(jws);
+                    long companyId = jwt.getCompanyId(jws);
                     String role = jwt.getRole(jws);
 
+                    var principal = new AuthPrincipal(userId, companyId, role);
                     var authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role));
                     // principal=userId
-                    return Mono.just(new UsernamePasswordAuthenticationToken(userId, token, authorities));
+                    return Mono.just(new UsernamePasswordAuthenticationToken(principal, token, authorities));
                 });
     }
 }
