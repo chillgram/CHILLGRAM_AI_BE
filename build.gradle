@@ -74,7 +74,9 @@ dependencies {
 	implementation "org.springdoc:springdoc-openapi-starter-webflux-ui:2.8.15"
 
 	// GCP Secret Manager
-	implementation "com.google.cloud:google-cloud-secretmanager:2.45.0"
+    implementation platform("io.grpc:grpc-bom:1.70.0")
+    implementation "com.google.cloud:google-cloud-secretmanager:2.45.0"
+    implementation "io.grpc:grpc-netty-shaded"
 }
 
 tasks.named('test') {
