@@ -107,7 +107,8 @@ public class ProductHandler {
         Mono<Long> userIdMono = request.principal()
                 .map(principal -> {
                     if (principal instanceof org.springframework.security.authentication.UsernamePasswordAuthenticationToken auth) {
-                        return (Long) auth.getPrincipal();
+                        var authPrincipal = (com.example.chillgram.common.security.AuthPrincipal) auth.getPrincipal();
+                        return authPrincipal.userId();
                     }
                     throw new IllegalStateException("인증 정보가 올바르지 않습니다.");
                 });
