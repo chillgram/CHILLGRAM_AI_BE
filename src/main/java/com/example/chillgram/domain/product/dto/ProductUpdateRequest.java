@@ -1,9 +1,11 @@
 package com.example.chillgram.domain.product.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.validator.constraints.URL;
 
 /**
  * 제품 수정 요청 DTO
@@ -36,4 +38,11 @@ public class ProductUpdateRequest {
      * 활성화 여부 (null이면 기존 값 유지)
      */
     private Boolean isActive;
+
+    /**
+     * 리뷰 URL (null이면 기존 값 유지)
+     */
+    @Schema(description = "리뷰 URL")
+    @URL(message = "유효한 URL 형식이 아닙니다")
+    private String reviewUrl;
 }

@@ -39,6 +39,9 @@ public class Product {
     @Builder.Default
     private Boolean isActive = true;
 
+    @Column("reviewUrl")
+    private String reviewUrl;
+
     @CreatedBy
     @Column("created_by")
     private Long createdBy;
@@ -66,6 +69,9 @@ public class Product {
 
         if (request.getIsActive() != null) {
             this.isActive = request.getIsActive();
+        }
+        if (request.getReviewUrl() != null) {
+            this.reviewUrl = request.getReviewUrl();
         }
         this.updatedAt = LocalDateTime.now();
         return this;

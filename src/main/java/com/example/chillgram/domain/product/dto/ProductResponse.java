@@ -1,6 +1,7 @@
 package com.example.chillgram.domain.product.dto;
 
 import com.example.chillgram.domain.product.entity.Product;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 import lombok.Data;
 
@@ -14,6 +15,8 @@ public class ProductResponse {
     private String name;
     private String category;
     private String description;
+    @Schema(description = "리뷰 URL")
+    private String reviewUrl;
 
     private Boolean isActive;
     private Long createdBy;
@@ -29,6 +32,7 @@ public class ProductResponse {
                 .name(product.getName())
                 .category(product.getCategory())
                 .description(product.getDescription())
+                .reviewUrl(product.getReviewUrl())
 
                 .isActive(product.getIsActive())
                 .createdBy(product.getCreatedBy())
