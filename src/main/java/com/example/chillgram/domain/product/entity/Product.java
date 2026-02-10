@@ -39,7 +39,7 @@ public class Product {
     @Builder.Default
     private Boolean isActive = true;
 
-    @Column("reviewUrl")
+    @Column("review_url")
     private String reviewUrl;
 
     @CreatedBy
