@@ -28,11 +28,14 @@ public class AdHandler {
     private final AdService adService;
     private final ObjectMapper objectMapper;
     private final FileStorage fileStorage;
+    private final jakarta.validation.Validator validator;
 
-    public AdHandler(AdService adService, ObjectMapper objectMapper, FileStorage fileStorage) {
+    public AdHandler(AdService adService, ObjectMapper objectMapper, FileStorage fileStorage,
+            jakarta.validation.Validator validator) {
         this.adService = adService;
         this.objectMapper = objectMapper;
         this.fileStorage = fileStorage;
+        this.validator = validator;
     }
 
     /**
@@ -104,6 +107,16 @@ public class AdHandler {
                         body = objectMapper.readValue(p.value(), AdCreateRequest.class);
                     } catch (Exception e) {
                         return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "invalid payload json"));
+                    }
+
+                    // 수동 Validation 수행
+                    var violations = validator.validate(body);
+                    if (!violations.isEmpty()) {
+                        String errorMsg = violations.stream()
+                                .map(v -> v.getPropertyPath() + ": " + v.getMessage())
+                                .reduce((m1, m2) -> m1 + ", " + m2)
+                                .orElse("Validation failed");
+                        return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, errorMsg));
                     }
 
                     return fileStorage.store(f)

@@ -46,7 +46,8 @@ public class ProductRouter {
                         @RouterOperation(path = "/api/v1/products/{id}/ad-trends", method = RequestMethod.GET, beanClass = ProductHandler.class, beanMethod = "getAdTrends", operation = @Operation(summary = "제품 광고 트렌드 분석 조회", parameters = {
                                         @Parameter(name = "id", in = ParameterIn.PATH, required = true),
                                         @Parameter(name = "date", in = ParameterIn.QUERY, required = false, example = "2026-02-10")
-                        }, tags = { "Product" }))
+                        }, tags = { "Product" })),
+                        @RouterOperation(path = "/api/products/{id}/ads", method = RequestMethod.POST, beanClass = AdHandler.class, beanMethod = "createAdProjectAndContents", operation = @Operation(summary = "광고 생성 (프로젝트+콘텐츠+에셋)", description = "이미지와 JSON 데이터를 함께 전송하여 광고 프로젝트를 생성합니다. (Multipart: payload=JSON, file=Image)", tags = "Product", parameters = @Parameter(name = "id", description = "제품 ID", in = ParameterIn.PATH), requestBody = @RequestBody(content = @Content(mediaType = MediaType.MULTIPART_FORM_DATA_VALUE))))
         })
         public RouterFunction<ServerResponse> productRoutes(ProductHandler productHandler, AdHandler adHandler) {
                 return RouterFunctions.route()
