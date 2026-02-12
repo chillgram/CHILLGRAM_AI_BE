@@ -10,12 +10,14 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.ReactiveAuthenticationManager;
 import org.springframework.security.config.web.server.SecurityWebFiltersOrder;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 import org.springframework.security.web.server.authentication.AuthenticationWebFilter;
+import org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
@@ -42,10 +44,19 @@ public class SecurityConfig {
             ServerHttpSecurity http,
             ReactiveAuthenticationManager jwtAuthManager,
             Environment env) {
-        AuthenticationWebFilter jwtWebFilter = new AuthenticationWebFilter(jwtAuthManager);
-        jwtWebFilter.setServerAuthenticationConverter(new BearerTokenServerAuthenticationConverter());
 
-        jwtWebFilter.setAuthenticationFailureHandler((webFilterExchange, ex) -> Mono
+        AuthenticationWebFilter filter = new AuthenticationWebFilter(jwtAuthManager);
+        filter.setServerAuthenticationConverter(new BearerTokenServerAuthenticationConverter());
+
+        filter.setRequiresAuthenticationMatcher(exchange -> {
+            String auth = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+            boolean hasBearer = auth != null && auth.startsWith("Bearer ");
+            return hasBearer
+                    ? ServerWebExchangeMatcher.MatchResult.match()
+                    : ServerWebExchangeMatcher.MatchResult.notMatch();
+        });
+
+        filter.setAuthenticationFailureHandler((webFilterExchange, ex) -> Mono
                 .error(ApiException.of(ErrorCode.UNAUTHORIZED, "authentication failed")));
 
         boolean isProd = List.of(env.getActiveProfiles()).contains("prod");
@@ -63,7 +74,8 @@ public class SecurityConfig {
 
                     // Q&A 조회 API 공개 (질문 목록, 질문 상세)
                     ex.pathMatchers(HttpMethod.GET, "/api/qs/questions").permitAll();
-                    ex.pathMatchers(HttpMethod.GET, "/api/users/hello").permitAll();
+                    ex.pathMatchers(HttpMethod.POST, "/api/projects/*/jobs").permitAll();
+                    ex.pathMatchers(HttpMethod.GET, "/api/**").permitAll();
 
                     if (isProd) {
                         ex.pathMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").denyAll();
@@ -73,7 +85,7 @@ public class SecurityConfig {
 
                     ex.anyExchange().authenticated();
                 })
-                .addFilterAt(jwtWebFilter, SecurityWebFiltersOrder.AUTHENTICATION)
+                .addFilterAt(filter, SecurityWebFiltersOrder.AUTHENTICATION)
                 .build();
     }
 

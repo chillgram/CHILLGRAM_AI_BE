@@ -29,6 +29,8 @@ public enum ErrorCode {
     NOT_FOUND(HttpStatus.NOT_FOUND, "리소스를 찾을 수 없습니다."),
     CONFLICT(HttpStatus.CONFLICT, "요청이 현재 상태와 충돌합니다."),
     AD_GUIDE_GENERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "광고 가이드 생성에 실패했습니다."),
+    JOB_NOT_FOUND(HttpStatus.NOT_FOUND, "작업을 찾을 수 없습니다."),
+    JOB_ALREADY_FINISHED(HttpStatus.CONFLICT, "이미 종료된 작업입니다."),
 
     AD_COPY_GENERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "광고 문구 생성에 실패했습니다."),
     AD_GUIDE_REQUIRED(HttpStatus.BAD_REQUEST, "guideId는 필수입니다."),
