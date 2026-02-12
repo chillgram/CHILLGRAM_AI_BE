@@ -81,6 +81,10 @@ dependencies {
     implementation "io.grpc:grpc-netty"
     implementation "io.grpc:grpc-stub"
     implementation "io.grpc:grpc-protobuf"
+
+    // Storage & MQ (Added for Manual Test & Compilation)
+    implementation 'com.google.cloud:google-cloud-storage'
+    implementation 'org.springframework.boot:spring-boot-starter-amqp'
 }
 
 tasks.named('test') {
