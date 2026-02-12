@@ -7,11 +7,13 @@ import java.util.List;
 
 public record AdCreateRequest(
         String productName,
+        String projectType, // AD, GUIDE etc.
         String projectTitle,
         String adGoal,
         String requestText,
         List<String> selectedKeywords,
         Integer adFocus,
+        Integer adMessageTarget,
 
         String baseDate,
         String bannerSize,
@@ -23,8 +25,7 @@ public record AdCreateRequest(
         String selectedCopyId,
         FinalCopyResponse selectedCopy,
 
-        List<String> selectedTypes
-) {
+        List<String> selectedTypes) {
     public AdCreateRequest {
         selectedKeywords = selectedKeywords == null ? List.of() : List.copyOf(selectedKeywords);
         selectedTypes = selectedTypes == null ? List.of() : List.copyOf(selectedTypes);

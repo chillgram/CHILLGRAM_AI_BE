@@ -16,10 +16,10 @@ public class AdCreateRepository {
     // product_id로 company_id 조회 (FK/무결성 때문에 필수)
     public Mono<Long> findCompanyIdByProductId(long productId) {
         String sql = """
-            select company_id
-            from product
-            where product_id = $1
-            """;
+                select company_id
+                from product
+                where product_id = $1
+                """;
 
         return db.sql(sql)
                 .bind(0, productId)
@@ -28,44 +28,59 @@ public class AdCreateRepository {
     }
 
     // project insert + project_id 반환
-    public Mono<Long> insertProject(long companyId, long productId, String title, String desc) {
+    public Mono<Long> insertProject(long companyId, long productId, String projectType, String title, String desc,
+            long createdBy, Integer focus, Integer target, String userImgGcsUrl) {
         return db.sql("""
-            insert into project (company_id, product_id, project_type, title, description, status, created_at, updated_at)
-            values ($1,$2,'AD',$3,$4,'ACTIVE',now(),now())
-            returning project_id
-        """)
+                    insert into project (
+                        company_id, product_id, project_type, title, description,
+                        status, created_by, ad_message_focus, ad_message_target, userimg_gcs_url,
+                        created_at, updated_at
+                    )
+                    values ($1, $2, $3, $4, $5, 'ACTIVE', $6, $7, $8, $9, now(), now())
+                    returning project_id
+                """)
                 .bind(0, companyId)
                 .bind(1, productId)
-                .bind(2, title)
-                .bind(3, desc)
-                .map((r,m)->r.get("project_id",Long.class))
+                .bind(2, projectType == null ? "AD" : projectType)
+                .bind(3, title)
+                .bind(4, desc)
+                .bind(5, createdBy)
+                .bind(6, focus == null ? 0 : focus)
+                .bind(7, target == null ? 0 : target)
+                .bind(8, userImgGcsUrl == null ? "" : userImgGcsUrl)
+                .map((r, m) -> r.get("project_id", Long.class))
                 .one();
     }
 
     // content insert + content_id 반환
-    public Mono<Long> insertContent(long companyId,long productId,long projectId,
-                                    String contentType,String platform,
-                                    String title,String body,String tags) {
+    // content insert + content_id 반환
+    public Mono<Long> insertContent(long companyId, long productId, long projectId,
+            String contentType, String platform,
+            String title, String body, String tags,
+            long createdBy, Integer bannerRatio) {
         return db.sql("""
-            insert into content (
-                company_id, product_id, project_id,
-                content_type, platform,
-                title, body, status, tags,
-                view_count, like_count, share_count,
-                created_at, updated_at
-            )
-            values ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8,0,0,0,now(),now())
-            returning content_id
-        """)
-                .bind(0,companyId)
-                .bind(1,productId)
-                .bind(2,projectId)
-                .bind(3,contentType)
-                .bind(4,platform)
-                .bind(5,title)
-                .bind(6,body)
-                .bind(7,tags)
-                .map((r,m)->r.get("content_id",Long.class))
+                    insert into content (
+                        company_id, product_id, project_id,
+                        content_type, platform,
+                        title, body, status, tags,
+                        view_count, like_count, share_count,
+                        created_by, banner_ratio,
+                        created_at, updated_at
+                    )
+                    values ($1,$2,$3,$4,$5,$6,$7,'DRAFT',$8,0,0,0,$9,$10,now(),now())
+                    returning content_id
+                """)
+                .bind(0, companyId)
+                .bind(1, productId)
+                .bind(2, projectId)
+                .bind(3, contentType)
+                .bind(4, platform)
+                .bind(5, title)
+                .bind(6, body)
+                .bind(7, tags)
+                .bind(8, createdBy)
+                .bind(9, bannerRatio == null ? 0 : bannerRatio)
+                .map((r, m) -> r.get("content_id", Long.class))
                 .one();
     }
 
@@ -73,21 +88,20 @@ public class AdCreateRepository {
             long contentId,
             String fileUrl,
             String mimeType,
-            Long fileSize
-    ) {
+            Long fileSize) {
         return db.sql("""
-            insert into content_asset (
-                content_id, asset_type, file_url, mime_type,
-                file_size, sort_order, created_at
-            )
-            values ($1,'PRIMARY',$2,$3,$4,0,now())
-            returning asset_id
-        """)
-                .bind(0,contentId)
-                .bind(1,fileUrl)
-                .bind(2,mimeType)
-                .bind(3,fileSize)
-                .map((r,m)->r.get("asset_id",Long.class))
+                    insert into content_asset (
+                        content_id, asset_type, file_url, mime_type,
+                        file_size, sort_order, created_at
+                    )
+                    values ($1,'PRIMARY',$2,$3,$4,0,now())
+                    returning asset_id
+                """)
+                .bind(0, contentId)
+                .bind(1, fileUrl)
+                .bind(2, mimeType)
+                .bind(3, fileSize)
+                .map((r, m) -> r.get("asset_id", Long.class))
                 .one();
     }
 }

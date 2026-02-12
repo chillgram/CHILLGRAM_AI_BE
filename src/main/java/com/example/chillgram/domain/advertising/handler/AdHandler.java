@@ -28,12 +28,12 @@ public class AdHandler {
     private final ObjectMapper objectMapper;
     private final FileStorage fileStorage;
 
-
     public AdHandler(AdService adService, ObjectMapper objectMapper, FileStorage fileStorage) {
         this.adService = adService;
         this.objectMapper = objectMapper;
         this.fileStorage = fileStorage;
     }
+
     /**
      * 광고 트렌드 분석 조회
      */
@@ -45,8 +45,7 @@ public class AdHandler {
                     return adService.getAdTrends(productId, req.baseDate())
                             .flatMap(resp -> ServerResponse.ok()
                                     .contentType(MediaType.APPLICATION_JSON)
-                                    .bodyValue(resp)
-                            );
+                                    .bodyValue(resp));
                 });
     }
 
@@ -75,7 +74,17 @@ public class AdHandler {
     public Mono<ServerResponse> createAdProjectAndContents(ServerRequest req) {
         long productId = Long.parseLong(req.pathVariable("id"));
 
-        return req.multipartData()
+        // JWT userId 추출
+        Mono<Long> userIdMono = req.principal()
+                .map(principal -> {
+                    if (principal instanceof org.springframework.security.authentication.UsernamePasswordAuthenticationToken auth) {
+                        return (Long) auth.getPrincipal();
+                    }
+                    throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보를 확인할 수 없습니다.");
+                })
+                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "로그인이 필요합니다.")));
+
+        return userIdMono.flatMap(userId -> req.multipartData()
                 .flatMap(parts -> {
 
                     Part payloadPart = parts.getFirst("payload");
@@ -96,10 +105,8 @@ public class AdHandler {
                     }
 
                     return fileStorage.store(f)
-                            .flatMap(stored ->
-                                    adService.createProjectAndContents(productId, body, stored)
-                            )
+                            .flatMap(stored -> adService.createProjectAndContents(productId, body, stored, userId))
                             .flatMap(res -> ServerResponse.ok().bodyValue(res));
-                });
+                }));
     }
 }
