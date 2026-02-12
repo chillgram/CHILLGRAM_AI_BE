@@ -3,13 +3,18 @@ package com.example.chillgram.domain.advertising.service;
 import com.example.chillgram.common.exception.ApiException;
 import com.example.chillgram.common.exception.ErrorCode;
 import com.example.chillgram.domain.advertising.dto.*;
+import com.example.chillgram.domain.advertising.dto.jobs.CreateJobRequest;
+import com.example.chillgram.domain.advertising.dto.jobs.JobEnums;
 import com.example.chillgram.domain.advertising.engine.TrendRuleEngine;
 import com.example.chillgram.domain.advertising.repository.AdCreateRepository;
 import com.example.chillgram.domain.advertising.repository.EventCalendarRepository;
 import com.example.chillgram.domain.ai.dto.*;
 import com.example.chillgram.domain.ai.service.AdCopyService;
+import com.example.chillgram.domain.ai.service.JobService;
 import com.example.chillgram.domain.product.entity.Product;
 import com.example.chillgram.domain.product.repository.ProductRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.reactive.TransactionalOperator;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -29,7 +34,8 @@ public class AdService {
     private final TrendRuleEngine trendEngine;
     private final AdCopyService adCopyService;
     private final TransactionalOperator tx;
-    private final WebClient aiClient;
+    private final JobService jobService;
+    private final ObjectMapper objectMapper;
 
     public AdService(
             ProductRepository productRepository,
@@ -38,15 +44,16 @@ public class AdService {
             TrendRuleEngine trendEngine,
             AdCopyService adCopyService,
             TransactionalOperator tx,
-            WebClient aiClient
-    ) {
+            JobService jobService,
+            ObjectMapper objectMapper) {
         this.productRepository = productRepository;
         this.eventCalendarRepository = eventCalendarRepository;
         this.adCreateRepository = adCreateRepository;
         this.trendEngine = trendEngine;
         this.adCopyService = adCopyService;
         this.tx = tx;
-        this.aiClient = aiClient;
+        this.jobService = jobService;
+        this.objectMapper = objectMapper;
     }
 
     private Mono<Product> requireProduct(long productId) {
@@ -153,53 +160,104 @@ public class AdService {
                 );
     }
 
-    public Mono<AdCreateResponse> createProjectAndContents(long productId, AdCreateRequest req) {
-        // 최소 검증 (안 하면 DB에서 더 더럽게 터짐)
-        if (req.projectTitle() == null || req.projectTitle().trim().isEmpty()) {
-            return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "projectTitle is required"));
-        }
-        if (req.selectedTypes() == null || req.selectedTypes().isEmpty()) {
-            return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "selectedTypes is required"));
-        }
-        if (req.selectedCopy() == null || req.selectedCopy().finalCopy() == null || req.selectedCopy().finalCopy().isBlank()) {
-            return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "selectedCopy.finalCopy is required"));
-        }
+    public Mono<AdCreateResponse> createProjectAndContents(
+            long productId,
+            AdCreateRequest req,
+            FileStorage.StoredFile stored
+    ) {
+        if (stored == null || stored.fileUrl() == null)
+            return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED,"file required"));
 
-        // product 존재 검증
-        Mono<Void> ensureProduct = productRepository.existsById(productId)
-                .flatMap(exists -> exists
-                        ? Mono.empty()
-                        : Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND, "product not found id=" + productId)));
-
-        // company_id 조회 (FK 때문에 필수)
-        Mono<Long> companyIdMono = adCreateRepository.findCompanyIdByProductId(productId)
-                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND, "company not found by productId=" + productId)));
-
-        return ensureProduct.then(companyIdMono)
+        return productRepository.existsById(productId)
+                .flatMap(exists -> exists ? Mono.empty()
+                        : Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND,"product not found")))
+                .then(adCreateRepository.findCompanyIdByProductId(productId))
                 .flatMap(companyId ->
                         adCreateRepository.insertProject(
                                         companyId,
                                         productId,
-                                        safe(req.projectTitle()),
-                                        safe(req.requestText())
+                                        req.projectTitle(),
+                                        req.requestText()
                                 )
                                 .flatMap(projectId ->
-                                        insertContents(companyId, productId, projectId, req)
+                                        insertContents(companyId, productId, projectId, req, stored)
                                                 .collectList()
-                                                .map(contentIds -> new AdCreateResponse(projectId, contentIds))
+                                                .flatMap(contentIds -> {
+
+                                                    CreateJobRequest jobReq =
+                                                            buildJobPayload(req, projectId, contentIds, stored.fileUrl());
+
+                                                    return jobService.requestJob(projectId, jobReq, "")
+                                                            .map(jobId ->
+                                                                    new AdCreateResponse(projectId, contentIds, jobId)
+                                                            );
+                                                })
                                 )
                 )
-                .as(tx::transactional)
-                .onErrorMap(ex -> (ex instanceof ApiException) ? ex
-                        : ApiException.of(ErrorCode.INTERNAL_ERROR, ex.getMessage()));
+                .as(tx::transactional);
     }
 
+    private Flux<Long> insertContents(
+            long companyId,
+            long productId,
+            long projectId,
+            AdCreateRequest req,
+            FileStorage.StoredFile stored
+    ) {
+        return Flux.fromIterable(req.selectedTypes())
+                .flatMap(type ->
+                        adCreateRepository.insertContent(
+                                        companyId,
+                                        productId,
+                                        projectId,
+                                        "IMAGE",
+                                        "INSTAGRAM",
+                                        req.projectTitle(),
+                                        req.selectedCopy().finalCopy(),
+                                        null
+                                )
+                                .flatMap(contentId ->
+                                        adCreateRepository.insertContentAsset(
+                                                        contentId,
+                                                        stored.fileUrl(),
+                                                        stored.mimeType(),
+                                                        stored.fileSize()
+                                                )
+                                                .thenReturn(contentId)
+                                )
+                );
+    }
+
+    private CreateJobRequest buildJobPayload(
+            AdCreateRequest req,
+            long projectId,
+            List<Long> contentIds,
+            String imageUrl
+    ) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("projectId", projectId);
+        payload.put("imageUrl", imageUrl);
+        payload.put("finalCopy", req.selectedCopy().finalCopy());
+
+        var arr = payload.putArray("contentIds");
+        contentIds.forEach(arr::add);
+
+        return new CreateJobRequest(
+                JobEnums.JobType.BANNER,
+                payload
+        );
+    }
+
+
+
+    // 기존 insertContents는 이제 안 쓰면 삭제해도 됨(유지해도 상관 없음)
+    @SuppressWarnings("unused")
     private Flux<Long> insertContents(long companyId, long productId, long projectId, AdCreateRequest req) {
         String tags = buildTags(req.selectedKeywords());
         String body = buildBody(req);
 
         return Flux.fromIterable(req.selectedTypes())
-                .map(ContentMeta::fromUiLabel) // UI → DB enum
+                .map(ContentMeta::fromUiLabel)
                 .flatMap(meta ->
                         adCreateRepository.insertContent(
                                 companyId,
@@ -231,9 +289,14 @@ public class AdService {
         sb.append("- adGoal: ").append(safe(req.adGoal())).append("\n");
         sb.append("- requestText: ").append(safe(req.requestText())).append("\n");
         sb.append("- keywords: ").append(req.selectedKeywords()).append("\n");
-        sb.append("- adFocus: ").append(req.adFocus()).append("\n\n");
+        sb.append("- adFocus: ").append(req.adFocus()).append("\n");
 
-        sb.append("## STEP2\n");
+        // ✅ AdCreateRequest에 baseDate/bannerSize/platform을 넣었으면 여기에도 같이 저장(데이터 유실 방지)
+        // sb.append("- baseDate: ").append(safe(req.baseDate())).append("\n");
+        // sb.append("- bannerSize: ").append(safe(req.bannerSize())).append("\n");
+        // sb.append("- platform: ").append(safe(req.platform())).append("\n");
+
+        sb.append("\n## STEP2\n");
         sb.append("- guideId: ").append(safe(req.selectedGuideId())).append("\n\n");
 
         sb.append("## STEP3\n");

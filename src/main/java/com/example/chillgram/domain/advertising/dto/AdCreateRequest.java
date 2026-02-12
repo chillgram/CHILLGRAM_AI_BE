@@ -1,6 +1,8 @@
 package com.example.chillgram.domain.advertising.dto;
 
 import com.example.chillgram.domain.ai.dto.FinalCopyResponse;
+import com.fasterxml.jackson.databind.JsonNode;
+
 import java.util.List;
 
 public record AdCreateRequest(
@@ -11,13 +13,17 @@ public record AdCreateRequest(
         List<String> selectedKeywords,
         Integer adFocus,
 
+        String baseDate,
+        String bannerSize,
+        String platform,
+
         String selectedGuideId,
-        Object selectedGuide, // 지금은 통째로 받기(나중에 Guide DTO로 고정)
+        JsonNode selectedGuide,
 
         String selectedCopyId,
-        FinalCopyResponse selectedCopy, // Step3 선택 문구(최종 카피)
+        FinalCopyResponse selectedCopy,
 
-        List<String> selectedTypes // Step4 선택 타입(복수)
+        List<String> selectedTypes
 ) {
     public AdCreateRequest {
         selectedKeywords = selectedKeywords == null ? List.of() : List.copyOf(selectedKeywords);

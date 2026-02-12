@@ -4,5 +4,5 @@ import java.util.List;
 
 public record AdCreateResponse(
         long projectId,
-        List<Long> contentIds
-) {}
+        List<Long> contentIds,
+        java.util.UUID jobId) {}

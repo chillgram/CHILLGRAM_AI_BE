@@ -1,12 +1,18 @@
 package com.example.chillgram.domain.advertising.handler;
 
+import com.example.chillgram.common.exception.ApiException;
+import com.example.chillgram.common.exception.ErrorCode;
 import com.example.chillgram.domain.advertising.dto.AdCreateRequest;
 import com.example.chillgram.domain.advertising.dto.AdGuidesRequest;
 import com.example.chillgram.domain.advertising.dto.AdTrendsRequest;
+import com.example.chillgram.domain.advertising.dto.FileStorage;
 import com.example.chillgram.domain.advertising.service.AdService;
 import com.example.chillgram.domain.ai.dto.AdCopiesRequest;
-import com.example.chillgram.domain.ai.dto.AdCopiesResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.multipart.FilePart;
+import org.springframework.http.codec.multipart.FormFieldPart;
+import org.springframework.http.codec.multipart.Part;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.server.ServerRequest;
 import org.springframework.web.reactive.function.server.ServerResponse;
@@ -19,11 +25,15 @@ import reactor.core.publisher.Mono;
 public class AdHandler {
 
     private final AdService adService;
+    private final ObjectMapper objectMapper;
+    private final FileStorage fileStorage;
 
-    public AdHandler(AdService adService) {
+
+    public AdHandler(AdService adService, ObjectMapper objectMapper, FileStorage fileStorage) {
         this.adService = adService;
+        this.objectMapper = objectMapper;
+        this.fileStorage = fileStorage;
     }
-
     /**
      * 광고 트렌드 분석 조회
      */
@@ -65,8 +75,31 @@ public class AdHandler {
     public Mono<ServerResponse> createAdProjectAndContents(ServerRequest req) {
         long productId = Long.parseLong(req.pathVariable("id"));
 
-        return req.bodyToMono(AdCreateRequest.class)
-                .flatMap(body -> adService.createProjectAndContents(productId, body))
-                .flatMap(res -> ServerResponse.ok().bodyValue(res));
+        return req.multipartData()
+                .flatMap(parts -> {
+
+                    Part payloadPart = parts.getFirst("payload");
+                    Part filePart = parts.getFirst("file");
+
+                    if (!(payloadPart instanceof FormFieldPart p)) {
+                        return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "payload part required"));
+                    }
+                    if (!(filePart instanceof FilePart f)) {
+                        return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "file part required"));
+                    }
+
+                    AdCreateRequest body;
+                    try {
+                        body = objectMapper.readValue(p.value(), AdCreateRequest.class);
+                    } catch (Exception e) {
+                        return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "invalid payload json"));
+                    }
+
+                    return fileStorage.store(f)
+                            .flatMap(stored ->
+                                    adService.createProjectAndContents(productId, body, stored)
+                            )
+                            .flatMap(res -> ServerResponse.ok().bodyValue(res));
+                });
     }
 }
