@@ -5,6 +5,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.validation.constraints.NotNull;
 
 public record CreateJobRequest(
-        @NotNull JobType jobType,
-        @NotNull JsonNode payload
-) {}
+                @NotNull JobType jobType,
+                @NotNull JsonNode payload) {
+}
