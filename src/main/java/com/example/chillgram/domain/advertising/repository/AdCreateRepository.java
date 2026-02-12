@@ -57,10 +57,6 @@ public class AdCreateRepository {
         return spec.map((r, m) -> r.get("project_id", Long.class)).one();
     }
 
-    .one();
-
-    }
-
     // content insert + content_id 반환
     // content insert + content_id 반환
     public Mono<Long> insertContent(long companyId, long productId, long projectId,
