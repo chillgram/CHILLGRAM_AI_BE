@@ -240,7 +240,8 @@ public class AdService {
                                                         contentType,
                                                         platform,
                                                         req.projectTitle(),
-                                                        req.selectedCopy().finalCopy(),
+                                                        req.selectedCopy() != null ? req.selectedCopy().finalCopy()
+                                                                        : "",
                                                         null,
                                                         userId,
                                                         finalBannerRatio)
