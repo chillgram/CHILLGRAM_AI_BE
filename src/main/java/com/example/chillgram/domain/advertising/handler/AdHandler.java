@@ -8,6 +8,7 @@ import com.example.chillgram.domain.advertising.dto.AdTrendsRequest;
 import com.example.chillgram.domain.advertising.dto.FileStorage;
 import com.example.chillgram.domain.advertising.service.AdService;
 import com.example.chillgram.domain.ai.dto.AdCopiesRequest;
+import com.example.chillgram.common.security.AuthPrincipal;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.multipart.FilePart;
@@ -77,8 +78,9 @@ public class AdHandler {
         // JWT userId 추출
         Mono<Long> userIdMono = req.principal()
                 .map(principal -> {
+
                     if (principal instanceof org.springframework.security.authentication.UsernamePasswordAuthenticationToken auth) {
-                        return (Long) auth.getPrincipal();
+                        return ((AuthPrincipal) auth.getPrincipal()).userId();
                     }
                     throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보를 확인할 수 없습니다.");
                 })
