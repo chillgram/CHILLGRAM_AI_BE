@@ -242,7 +242,11 @@ public class AdService {
                                                         req.projectTitle(),
                                                         req.selectedCopy() != null ? req.selectedCopy().finalCopy()
                                                                         : "",
-                                                        null,
+                                                        req.selectedKeywords() != null
+                                                                        && !req.selectedKeywords().isEmpty()
+                                                                                        ? String.join(",", req
+                                                                                                        .selectedKeywords())
+                                                                                        : null,
                                                         userId,
                                                         finalBannerRatio)
                                                         .flatMap(contentId -> adCreateRepository.insertContentAsset(
