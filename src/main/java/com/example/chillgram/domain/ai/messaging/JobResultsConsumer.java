@@ -4,6 +4,9 @@ import com.example.chillgram.domain.advertising.dto.jobs.JobResultRequest;
 import com.example.chillgram.domain.ai.service.JobService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.amqp.AmqpRejectAndDontRequeueException;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
 import reactor.core.scheduler.Schedulers;
@@ -12,6 +15,8 @@ import java.util.UUID;
 
 @Component
 public class JobResultsConsumer {
+
+    private static final Logger log = LoggerFactory.getLogger(JobResultsConsumer.class);
 
     private final ObjectMapper om;
     private final JobService jobService;
@@ -23,21 +28,34 @@ public class JobResultsConsumer {
 
     @RabbitListener(queues = "${app.jobs.result-queue}")
     public void onMessage(String body) throws Exception {
-        JsonNode n = om.readTree(body);
+        final JsonNode n = om.readTree(body);
 
-        String jobIdStr = n.path("jobId").asText("");
-        if (jobIdStr.isBlank()) return;
+        final String jobIdStr = n.path("jobId").asText("");
+        if (jobIdStr.isBlank()) {
+            // 재시도해도 의미 없음 -> requeue 금지
+            log.warn("Missing jobId. body={}", body);
+            throw new AmqpRejectAndDontRequeueException("Missing jobId");
+        }
 
-        boolean success = n.path("success").asBoolean(false);
-        String outputUri = n.path("outputUri").isNull() ? null : n.path("outputUri").asText(null);
-        String errorCode = n.path("errorCode").isNull() ? null : n.path("errorCode").asText(null);
-        String errorMessage = n.path("errorMessage").isNull() ? null : n.path("errorMessage").asText(null);
+        final UUID jobId;
+        try {
+            jobId = UUID.fromString(jobIdStr);
+        } catch (IllegalArgumentException e) {
+            // 재시도해도 100% 실패 -> 무한루프 차단
+            log.warn("Invalid UUID jobId='{}'. body={}", jobIdStr, body);
+            throw new AmqpRejectAndDontRequeueException("Invalid UUID jobId=" + jobIdStr, e);
+        }
 
-        JobResultRequest req = new JobResultRequest(success, outputUri, errorCode, errorMessage);
+        final boolean success = n.path("success").asBoolean(false);
+        final String outputUri = n.path("outputUri").isNull() ? null : n.path("outputUri").asText(null);
+        final String errorCode = n.path("errorCode").isNull() ? null : n.path("errorCode").asText(null);
+        final String errorMessage = n.path("errorMessage").isNull() ? null : n.path("errorMessage").asText(null);
 
-        // Listener 스레드에서 오래 붙잡지 않기: 별도 스케줄러로 넘김
-        jobService.applyResult(UUID.fromString(jobIdStr), req)
+        final JobResultRequest req = new JobResultRequest(success, outputUri, errorCode, errorMessage);
+
+        jobService.applyResult(jobId, req)
                 .subscribeOn(Schedulers.boundedElastic())
+                .doOnError(ex -> log.error("applyResult failed. jobId={}, body={}", jobId, body, ex))
                 .subscribe();
     }
 }
