@@ -2,6 +2,7 @@ package com.example.chillgram.domain.advertising.service;
 
 import com.example.chillgram.common.exception.ApiException;
 import com.example.chillgram.common.exception.ErrorCode;
+import com.example.chillgram.common.google.FileStorage;
 import com.example.chillgram.domain.advertising.dto.*;
 import com.example.chillgram.domain.advertising.dto.jobs.CreateJobRequest;
 import com.example.chillgram.domain.advertising.dto.jobs.JobEnums;

@@ -5,7 +5,7 @@ import com.example.chillgram.common.exception.ErrorCode;
 import com.example.chillgram.domain.advertising.dto.AdCreateRequest;
 import com.example.chillgram.domain.advertising.dto.AdGuidesRequest;
 import com.example.chillgram.domain.advertising.dto.AdTrendsRequest;
-import com.example.chillgram.domain.advertising.dto.FileStorage;
+import com.example.chillgram.common.google.FileStorage;
 import com.example.chillgram.domain.advertising.service.AdService;
 import com.example.chillgram.domain.ai.dto.AdCopiesRequest;
 import com.example.chillgram.common.security.AuthPrincipal;
