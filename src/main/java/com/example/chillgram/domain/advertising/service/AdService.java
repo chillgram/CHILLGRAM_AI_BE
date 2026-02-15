@@ -14,6 +14,7 @@ import com.example.chillgram.domain.ai.service.AdCopyService;
 import com.example.chillgram.domain.ai.service.JobService;
 import com.example.chillgram.domain.product.entity.Product;
 import com.example.chillgram.domain.product.repository.ProductRepository;
+import com.example.chillgram.domain.project.repository.ProjectRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
@@ -30,6 +31,7 @@ import java.util.List;
 public class AdService {
 
         private final ProductRepository productRepository;
+        private final ProjectRepository projectRepository;
         private final EventCalendarRepository eventCalendarRepository;
         private final AdCreateRepository adCreateRepository;
         private final TrendRuleEngine trendEngine;
@@ -40,6 +42,7 @@ public class AdService {
 
         public AdService(
                         ProductRepository productRepository,
+                        ProjectRepository projectRepository,
                         EventCalendarRepository eventCalendarRepository,
                         AdCreateRepository adCreateRepository,
                         TrendRuleEngine trendEngine,
@@ -48,6 +51,7 @@ public class AdService {
                         JobService jobService,
                         ObjectMapper objectMapper) {
                 this.productRepository = productRepository;
+                this.projectRepository = projectRepository;
                 this.eventCalendarRepository = eventCalendarRepository;
                 this.adCreateRepository = adCreateRepository;
                 this.trendEngine = trendEngine;

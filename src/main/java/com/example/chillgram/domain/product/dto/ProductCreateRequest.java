@@ -37,10 +37,10 @@ public class ProductCreateRequest {
     private String description;
 
     /**
-     * 활성화 여부 (기본값: true)
+     * 활성화 여부 (기본값: false)
      */
     @Builder.Default
-    private Boolean isActive = true;
+    private Boolean isActive = false;
 
     /**
      * 리뷰 URL (선택)
@@ -59,7 +59,7 @@ public class ProductCreateRequest {
                 .category(this.category)
                 .description(this.description)
                 .reviewUrl(this.reviewUrl)
-                .isActive(this.isActive != null ? this.isActive : true)
+                .isActive(this.isActive != null ? this.isActive : false)
                 .createdBy(createdBy)
                 .build();
     }

@@ -1,6 +1,7 @@
 package com.example.chillgram.domain.qa.handler;
 
 import com.example.chillgram.domain.qa.dto.QaAnswerCreateRequest;
+import com.example.chillgram.common.security.AuthPrincipal;
 import com.example.chillgram.domain.qa.service.QaService;
 import com.example.chillgram.domain.user.repository.AppUserRepository;
 import com.example.chillgram.common.exception.ApiException;
@@ -57,14 +58,7 @@ public class QaHandler {
     // ============================================================================
     public Mono<ServerResponse> createQuestion(ServerRequest request) {
         // 로그인한 유저 ID 추출 (JWT principal에서)
-        Mono<Long> userIdMono = request.principal()
-                .map(principal -> {
-                    if (principal instanceof org.springframework.security.authentication.UsernamePasswordAuthenticationToken auth) {
-                        return (Long) auth.getPrincipal();
-                    }
-                    throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보를 확인할 수 없습니다.");
-                })
-                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "로그인이 필요합니다.")));
+        Mono<Long> userIdMono = extractUserId(request);
 
         // userId로 DB 조회 → companyId 획득
         return userIdMono.flatMap(loggedInUserId -> appUserRepository.findById(loggedInUserId)
@@ -218,14 +212,7 @@ public class QaHandler {
         Long questionId = Long.parseLong(request.pathVariable("questionId"));
 
         // 로그인한 유저 ID 추출 (JWT principal에서)
-        Mono<Long> userIdMono = request.principal()
-                .map(principal -> {
-                    if (principal instanceof org.springframework.security.authentication.UsernamePasswordAuthenticationToken auth) {
-                        return (Long) auth.getPrincipal();
-                    }
-                    throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보를 확인할 수 없습니다.");
-                })
-                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "로그인이 필요합니다.")));
+        Mono<Long> userIdMono = extractUserId(request);
 
         // userId로 DB 조회 → companyId 획득
         return userIdMono.flatMap(loggedInUserId -> appUserRepository.findById(loggedInUserId)
@@ -277,6 +264,20 @@ public class QaHandler {
     // ============================================================================
 
     /**
+     * JWT principal에서 userId 추출
+     */
+    private Mono<Long> extractUserId(ServerRequest request) {
+        return request.principal()
+                .map(principal -> {
+                    if (principal instanceof org.springframework.security.authentication.UsernamePasswordAuthenticationToken auth) {
+                        return ((AuthPrincipal) auth.getPrincipal()).userId();
+                    }
+                    throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보를 확인할 수 없습니다.");
+                })
+                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "로그인이 필요합니다.")));
+    }
+
+    /**
      * Multipart Form에서 특정 필드 값 추출
      */
     private String getFormValue(Map<String, Part> partMap, String key) {
@@ -314,14 +315,7 @@ public class QaHandler {
         }
 
         // JWT에서 userId 추출
-        Mono<Long> userIdMono = request.principal()
-                .map(principal -> {
-                    if (principal instanceof org.springframework.security.authentication.UsernamePasswordAuthenticationToken auth) {
-                        return (Long) auth.getPrincipal();
-                    }
-                    throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보를 확인할 수 없습니다.");
-                })
-                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "로그인이 필요합니다.")));
+        Mono<Long> userIdMono = extractUserId(request);
 
         return userIdMono
                 .flatMap(userId -> request.multipartData()
@@ -384,14 +378,7 @@ public class QaHandler {
         }
 
         // JWT에서 userId 추출
-        Mono<Long> userIdMono = request.principal()
-                .map(principal -> {
-                    if (principal instanceof org.springframework.security.authentication.UsernamePasswordAuthenticationToken auth) {
-                        return (Long) auth.getPrincipal();
-                    }
-                    throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보를 확인할 수 없습니다.");
-                })
-                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "로그인이 필요합니다.")));
+        Mono<Long> userIdMono = extractUserId(request);
 
         return userIdMono
                 .flatMap(userId -> request.bodyToMono(com.example.chillgram.domain.qa.dto.QaAnswerUpdateRequest.class)
