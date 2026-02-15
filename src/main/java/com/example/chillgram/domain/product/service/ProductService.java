@@ -39,9 +39,7 @@ public class ProductService {
         /**
          * 전체 제품 수 및 상태별 통계 조회 (대시보드용)
          */
-        public Mono<ProductDashboardStats> getDashboardStats() {
-                // TODO: SecurityContext에서 companyId 추출 (현재는 임시로 1L 고정)
-                Long companyId = 1L;
+        public Mono<ProductDashboardStats> getDashboardStats(Long companyId) {
 
                 return Mono.zip(
                                 productRepository.countByCompanyId(companyId),
@@ -57,9 +55,7 @@ public class ProductService {
         /**
          * 제품 목록 조회 (키워드 검색 및 페이징) + 작성자/회사 이름 포함
          */
-        public Mono<Page<ProductResponse>> getProductList(String search, Pageable pageable) {
-                // TODO: SecurityContext에서 companyId 추출 (현재는 임시로 1L 고정)
-                Long companyId = 1L;
+        public Mono<Page<ProductResponse>> getProductList(Long companyId, String search, Pageable pageable) {
 
                 Mono<Long> countMono;
                 Flux<Product> productFlux;
@@ -160,35 +156,23 @@ public class ProductService {
          * @return ProductResponse
          */
         @Transactional
-        public Mono<ProductResponse> createProduct(ProductCreateRequest request, Long userId) {
-                // 1. userId로 AppUser 조회 → companyId 획득
-                return appUserRepository.findById(userId)
-                                .switchIfEmpty(Mono.error(new IllegalArgumentException("사용자를 찾을 수 없습니다. id=" + userId)))
-                                .flatMap(user -> {
-                                        Long companyId = user.getCompanyId();
-                                        Long createdBy = userId;
-
-                                        // 2. Product 저장
-                                        return productRepository.save(request.toEntity(companyId, createdBy))
-                                                        .flatMap(product -> {
-                                                                // 3. 응답에 이름 정보 포함
-                                                                return Mono.zip(
-                                                                                companyRepository.findById(
-                                                                                                product.getCompanyId())
-                                                                                                .map(Company::getName)
-                                                                                                .defaultIfEmpty("Unknown"),
-                                                                                Mono.just(user.getName() != null
-                                                                                                ? user.getName()
-                                                                                                : "Unknown"))
-                                                                                .map(namesTuple -> {
-                                                                                        ProductResponse res = ProductResponse
-                                                                                                        .from(product);
-                                                                                        res.setCompanyName(namesTuple
-                                                                                                        .getT1());
-                                                                                        res.setCreatedByName(namesTuple
-                                                                                                        .getT2());
-                                                                                        return res;
-                                                                                });
+        public Mono<ProductResponse> createProduct(ProductCreateRequest request, Long companyId, Long userId) {
+                // 1. Product 저장
+                return productRepository.save(request.toEntity(companyId, userId))
+                                .flatMap(product -> {
+                                        // 2. 응답에 이름 정보 포함
+                                        return Mono.zip(
+                                                        companyRepository.findById(product.getCompanyId())
+                                                                        .map(Company::getName)
+                                                                        .defaultIfEmpty("Unknown"),
+                                                        appUserRepository.findById(userId)
+                                                                        .map(AppUser::getName)
+                                                                        .defaultIfEmpty("Unknown"))
+                                                        .map(namesTuple -> {
+                                                                ProductResponse res = ProductResponse.from(product);
+                                                                res.setCompanyName(namesTuple.getT1());
+                                                                res.setCreatedByName(namesTuple.getT2());
+                                                                return res;
                                                         });
                                 })
                                 .doOnSuccess(product -> log.info("Product created: {}", product.getId()));

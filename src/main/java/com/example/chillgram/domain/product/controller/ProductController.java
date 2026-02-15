@@ -1,0 +1,86 @@
+package com.example.chillgram.domain.product.controller;
+
+import com.example.chillgram.common.exception.ApiException;
+import com.example.chillgram.common.exception.ErrorCode;
+import com.example.chillgram.common.security.AuthPrincipal;
+import com.example.chillgram.domain.product.dto.ProductCreateRequest;
+import com.example.chillgram.domain.product.dto.ProductDashboardStats;
+import com.example.chillgram.domain.product.dto.ProductResponse;
+import com.example.chillgram.domain.product.dto.ProductUpdateRequest;
+import com.example.chillgram.domain.product.service.ProductService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Mono;
+
+@RestController
+@RequestMapping("/api/products")
+@RequiredArgsConstructor
+@Slf4j
+@Tag(name = "Product", description = "제품 관리 API")
+public class ProductController {
+
+    private final ProductService productService;
+
+    @GetMapping("/stats")
+    @Operation(summary = "대시보드 통계 조회")
+    public Mono<ProductDashboardStats> getDashboardStats(
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        if (principal == null) {
+            throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보가 없습니다.");
+        }
+        return productService.getDashboardStats(principal.companyId());
+    }
+
+    @GetMapping
+    @Operation(summary = "제품 목록 조회", description = "제품 목록을 검색하고 페이징하여 조회합니다.")
+    public Mono<Page<ProductResponse>> getProductList(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @Parameter(description = "페이지 번호 (0..N)") @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "페이지 크기") @RequestParam(defaultValue = "10") int size,
+            @Parameter(description = "검색어") @RequestParam(required = false) String search) {
+
+        if (principal == null) {
+            throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보가 없습니다.");
+        }
+        return productService.getProductList(principal.companyId(), search, PageRequest.of(page, size));
+    }
+
+    @GetMapping("/{id}")
+    @Operation(summary = "제품 상세 조회")
+    public Mono<ProductResponse> getProductDetail(
+            @Parameter(description = "제품 ID", required = true) @PathVariable Long id) {
+        return productService.getProductDetail(id);
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "제품 등록")
+    public Mono<ProductResponse> createProduct(
+            @Valid @RequestBody ProductCreateRequest request,
+            @AuthenticationPrincipal AuthPrincipal principal) {
+
+        if (principal == null) {
+            throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보가 없습니다.");
+        }
+
+        return productService.createProduct(request, principal.companyId(), principal.userId());
+    }
+
+    @PutMapping("/{id}")
+    @Operation(summary = "제품 수정")
+    public Mono<ProductResponse> updateProduct(
+            @Parameter(description = "제품 ID", required = true) @PathVariable Long id,
+            @Valid @RequestBody ProductUpdateRequest request) {
+        return productService.updateProduct(id, request);
+    }
+
+}

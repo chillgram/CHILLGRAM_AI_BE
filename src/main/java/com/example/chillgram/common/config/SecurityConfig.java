@@ -75,6 +75,10 @@ public class SecurityConfig {
                     // Q&A 조회 API 공개 (질문 목록, 질문 상세)
                     ex.pathMatchers(HttpMethod.GET, "/api/qs/questions").permitAll();
                     ex.pathMatchers(HttpMethod.POST, "/api/projects/*/jobs").permitAll();
+
+                    // Product API 인증 필수
+                    ex.pathMatchers("/api/products/**").authenticated();
+
                     ex.pathMatchers(HttpMethod.GET, "/api/**").permitAll();
 
                     if (isProd) {

@@ -1,5 +1,6 @@
 package com.example.chillgram.domain.project.service;
 
+import com.example.chillgram.domain.product.repository.ProductRepository;
 import com.example.chillgram.domain.content.repository.ContentRepository;
 import com.example.chillgram.domain.project.dto.ProjectCreateRequest;
 import com.example.chillgram.domain.project.dto.ProjectResponse;
@@ -25,6 +26,7 @@ public class ProjectService {
         private final ProjectRepository projectRepository;
         private final ContentRepository contentRepository;
         private final ProjectImageAttachmentRepository projectImageAttachmentRepository;
+        private final ProductRepository productRepository;
 
         /**
          * 제품의 프로젝트 목록 조회 (Content 개수 포함)
@@ -59,6 +61,12 @@ public class ProjectService {
                                                         .flatMap(projectImageAttachmentRepository::save)
                                                         .then(Mono.just(savedProject));
                                 })
+                                .flatMap(savedProject -> productRepository.findById(productId)
+                                                .flatMap(product -> {
+                                                        product.setIsActive(true);
+                                                        return productRepository.save(product);
+                                                })
+                                                .thenReturn(savedProject))
                                 .map(savedProject -> ProjectResponse.of(savedProject, 0L));
         }
 

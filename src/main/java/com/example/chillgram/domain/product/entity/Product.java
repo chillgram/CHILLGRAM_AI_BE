@@ -39,6 +39,10 @@ public class Product {
     @Builder.Default
     private Boolean isActive = false;
 
+    public void setIsActive(Boolean isActive) {
+        this.isActive = isActive;
+    }
+
     @Column("review_url")
     private String reviewUrl;
 
