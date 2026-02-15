@@ -52,4 +52,7 @@ public class QaQuestion {
 
     @Column("answered_at")
     private LocalDateTime answeredAt;
+
+    @Column("gcs_image_url")
+    private String gcsImageUrl;
 }

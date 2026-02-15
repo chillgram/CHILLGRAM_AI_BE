@@ -39,7 +39,7 @@ public class ProjectImageController {
 
         log.info("Project image upload request: projectId={}, filename={}", projectId, file.filename());
 
-        return fileStorage.store(file, "projects")
+        return fileStorage.store(file, "projects/" + projectId)
                 .flatMap(stored -> {
                     ProjectImageAttachment attachment = ProjectImageAttachment.builder()
                             .projectId(projectId)

@@ -1,14 +1,14 @@
 package com.example.chillgram.domain.qa.service;
 
+import com.example.chillgram.common.google.FileStorage;
+import com.example.chillgram.common.google.FileStorage.StoredFile;
 import com.example.chillgram.domain.qa.dto.QaAnswerResponse;
 import com.example.chillgram.domain.qa.dto.QaDetailResponse;
 import com.example.chillgram.domain.qa.dto.QaListResponse;
 import com.example.chillgram.domain.qa.dto.QaWriteResponse;
 import com.example.chillgram.domain.qa.entity.QaAnswer;
 import com.example.chillgram.domain.qa.entity.QaQuestion;
-import com.example.chillgram.domain.qa.entity.QaQuestionAttachment;
 import com.example.chillgram.domain.qa.repository.QaAnswerRepository;
-import com.example.chillgram.domain.qa.repository.QaQuestionAttachmentRepository;
 import com.example.chillgram.domain.qa.repository.QaQuestionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,10 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.io.File;
-import java.nio.file.Paths;
 import java.util.List;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -34,12 +31,9 @@ import java.util.stream.Collectors;
 public class QaService {
 
         private final QaQuestionRepository qaQuestionRepository;
-        private final QaQuestionAttachmentRepository qaQuestionAttachmentRepository;
         private final QaAnswerRepository qaAnswerRepository;
         private final com.example.chillgram.domain.user.repository.AppUserRepository appUserRepository;
-
-        // Docker/서버 환경을 고려한 외부 절대 경로
-        private static final String UPLOAD_DIR = "/app/uploads/qna/";
+        private final FileStorage fileStorage;
 
         // ==================== 목록 조회 ====================
         @Transactional(readOnly = true)
@@ -107,9 +101,7 @@ public class QaService {
         public Mono<QaDetailResponse> getQuestionDetail(Long questionId) {
                 return qaQuestionRepository.findById(questionId)
                                 .flatMap(question -> {
-                                        // 첨부파일 + 답변 동시 조회
-                                        Mono<List<QaQuestionAttachment>> attachmentsMono = qaQuestionAttachmentRepository
-                                                        .findByQuestionId(questionId).collectList();
+                                        // 답변 조회
                                         Mono<List<QaAnswer>> answersMono = qaAnswerRepository
                                                         .findByQuestionIdOrderByCreatedAtAsc(questionId).collectList();
 
@@ -119,11 +111,10 @@ public class QaService {
                                                         .map(u -> u.getName() != null ? u.getName() : "알 수 없음")
                                                         .defaultIfEmpty("알 수 없음");
 
-                                        return Mono.zip(attachmentsMono, answersMono, creatorNameMono)
+                                        return Mono.zip(answersMono, creatorNameMono)
                                                         .flatMap(tuple -> {
-                                                                List<QaQuestionAttachment> attachments = tuple.getT1();
-                                                                List<QaAnswer> answers = tuple.getT2();
-                                                                String creatorName = tuple.getT3();
+                                                                List<QaAnswer> answers = tuple.getT1();
+                                                                String creatorName = tuple.getT2();
 
                                                                 // 답변 작성자들의 이름 조회 준비
                                                                 List<Long> answerUserIds = answers.stream()
@@ -136,8 +127,7 @@ public class QaService {
                                                                                                 com.example.chillgram.domain.user.domain.AppUser::getName)
                                                                                 .map(nameMap -> {
                                                                                         QaDetailResponse response = QaDetailResponse
-                                                                                                        .from(question, attachments,
-                                                                                                                        answers);
+                                                                                                        .from(question, answers);
                                                                                         response.setCreatedByName(
                                                                                                         creatorName);
 
@@ -204,6 +194,10 @@ public class QaService {
                                                                                         .answeredAt(java.time.LocalDateTime
                                                                                                         .now()) // 첫 답변
                                                                                                                 // 시간
+                                                                                        .gcsImageUrl(question
+                                                                                                        .getGcsImageUrl()) // 기존
+                                                                                                                           // URL
+                                                                                                                           // 유지
                                                                                         .build();
                                                                         return qaQuestionRepository
                                                                                         .save(updatedQuestion)
@@ -250,7 +244,33 @@ public class QaService {
                                 .flatMap(savedQuestion -> {
                                         if (filePart != null && !filePart.filename().isBlank()) {
                                                 return saveAttachment(savedQuestion.getQuestionId(), filePart)
-                                                                .thenReturn(savedQuestion);
+                                                                .flatMap(attachment -> {
+                                                                        // URL 업데이트 후 다시 저장
+                                                                        QaQuestion updated = QaQuestion.builder()
+                                                                                        .questionId(savedQuestion
+                                                                                                        .getQuestionId())
+                                                                                        .companyId(savedQuestion
+                                                                                                        .getCompanyId())
+                                                                                        .categoryId(savedQuestion
+                                                                                                        .getCategoryId())
+                                                                                        .createdBy(savedQuestion
+                                                                                                        .getCreatedBy())
+                                                                                        .title(savedQuestion.getTitle())
+                                                                                        .body(savedQuestion.getBody())
+                                                                                        .status(savedQuestion
+                                                                                                        .getStatus())
+                                                                                        .viewCount(savedQuestion
+                                                                                                        .getViewCount())
+                                                                                        .createdAt(savedQuestion
+                                                                                                        .getCreatedAt())
+                                                                                        .updatedAt(savedQuestion
+                                                                                                        .getUpdatedAt())
+                                                                                        .gcsImageUrl(attachment
+                                                                                                        .fileUrl()) // URL
+                                                                                                                    // 저장
+                                                                                        .build();
+                                                                        return qaQuestionRepository.save(updated);
+                                                                });
                                         }
                                         return Mono.just(savedQuestion);
                                 })
@@ -259,42 +279,12 @@ public class QaService {
                 // 필요하다면 추가 가능
         }
 
-        // ==================== 첨부파일 저장 ====================
-        private Mono<QaQuestionAttachment> saveAttachment(Long questionId, FilePart filePart) {
-                File uploadDir = new File(UPLOAD_DIR);
-                if (!uploadDir.exists()) {
-                        boolean created = uploadDir.mkdirs();
-                        if (created) {
-                                log.info("Created upload directory: {}", uploadDir.getAbsolutePath());
-                        }
-                }
-
-                String originalFilename = filePart.filename();
-                String safeFilename = UUID.randomUUID() + "_" + originalFilename;
-                String filePath = Paths.get(UPLOAD_DIR, safeFilename).toString();
-
-                String mimeType = filePart.headers().getContentType() != null
-                                ? filePart.headers().getContentType().toString()
-                                : "application/octet-stream";
-
-                return filePart.transferTo(Paths.get(filePath))
-                                .then(Mono.defer(() -> {
-                                        long fileSize = new File(filePath).length();
-
-                                        // DB에는 웹 접근 경로로 저장 (/uploads/qna/파일명)
-                                        String webPath = "/uploads/qna/" + safeFilename;
-
-                                        QaQuestionAttachment attachment = QaQuestionAttachment.builder()
-                                                        .questionId(questionId)
-                                                        .fileUrl(webPath)
-                                                        .mimeType(mimeType)
-                                                        .fileSize(fileSize) // String -> Long
-                                                        .build();
-
-                                        return qaQuestionAttachmentRepository.save(attachment);
-                                }))
-                                .doOnSuccess(att -> log.info("Attachment saved: questionId={}, file={}", questionId,
-                                                filePath))
+        // ==================== 첨부파일 저장 (GCS) ====================
+        private Mono<StoredFile> saveAttachment(Long questionId, FilePart filePart) {
+                return fileStorage.store(filePart, "qna/" + questionId)
+                                .doOnSuccess(stored -> log.info("Attachment uploaded to GCS: questionId={}, url={}",
+                                                questionId,
+                                                stored.fileUrl()))
                                 .doOnError(e -> log.error("File upload failed", e));
         }
 
@@ -333,30 +323,32 @@ public class QaService {
                                                         : question.getBody();
 
                                         // 수정된 질문 생성 (R2DBC는 불변 객체)
-                                        QaQuestion updatedQuestion = QaQuestion.builder()
+                                        QaQuestion.QaQuestionBuilder builder = QaQuestion.builder()
                                                         .questionId(question.getQuestionId())
                                                         .companyId(question.getCompanyId())
                                                         .categoryId(finalCategoryId)
                                                         .createdBy(question.getCreatedBy())
                                                         .title(finalTitle)
                                                         .body(finalContent)
-                                                        .status(finalStatus) // 상태 변경 적용
+                                                        .status(finalStatus)
                                                         .viewCount(question.getViewCount())
                                                         .createdAt(question.getCreatedAt())
-                                                        .updatedAt(java.time.LocalDateTime.now()) // 수정 시간 갱신
+                                                        .updatedAt(java.time.LocalDateTime.now())
                                                         .answeredAt(question.getAnsweredAt())
-                                                        .build();
+                                                        .gcsImageUrl(question.getGcsImageUrl()); // 기존 URL 유지
 
-                                        return qaQuestionRepository.save(updatedQuestion);
+                                        return Mono.just(builder);
                                 })
-                                .flatMap(savedQuestion -> {
-                                        // 새 첨부파일이 있으면 저장
+                                .flatMap(builder -> {
+                                        // 새 첨부파일이 있으면 업로드 후 URL 업데이트
                                         if (filePart != null && !filePart.filename().isBlank()) {
-                                                return saveAttachment(savedQuestion.getQuestionId(), filePart)
-                                                                .thenReturn(savedQuestion);
+                                                return saveAttachment(builder.build().getQuestionId(), filePart)
+                                                                .map(att -> builder.gcsImageUrl(att.fileUrl())
+                                                                                .build());
                                         }
-                                        return Mono.just(savedQuestion);
+                                        return Mono.just(builder.build());
                                 })
+                                .flatMap(qaQuestionRepository::save) // 최종 저장
                                 .map(QaWriteResponse::from)
                                 .doOnSuccess(resp -> log.info("Question updated: id={}", questionId))
                                 .doOnError(e -> log.error("Failed to update question", e));

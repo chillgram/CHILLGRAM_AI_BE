@@ -2,7 +2,6 @@ package com.example.chillgram.domain.qa.dto;
 
 import com.example.chillgram.domain.qa.entity.QaAnswer;
 import com.example.chillgram.domain.qa.entity.QaQuestion;
-import com.example.chillgram.domain.qa.entity.QaQuestionAttachment;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -25,30 +24,12 @@ public class QaDetailResponse {
     private String createdByName; // 질문 작성자 이름 추가
     private LocalDateTime createdAt;
 
-    // 첨부파일 정보 리스트
-    private List<AttachmentDto> attachments;
+    // 첨부파일 URL (단일)
+    private String gcsImageUrl;
 
     // 답변 목록 (추가됨)
     private List<AnswerDto> answers;
     private Integer answerCount;
-
-    @Getter
-    @Builder
-    public static class AttachmentDto {
-        private Long attachmentId;
-        private String fileUrl;
-        private String mimeType;
-        private Long fileSize;
-
-        public static AttachmentDto from(QaQuestionAttachment attachment) {
-            return AttachmentDto.builder()
-                    .attachmentId(attachment.getAttachmentId())
-                    .fileUrl(attachment.getFileUrl()) // 상대 경로 반환 (/qna/...)
-                    .mimeType(attachment.getMimeType())
-                    .fileSize(attachment.getFileSize())
-                    .build();
-        }
-    }
 
     @Getter
     @Builder
@@ -77,9 +58,7 @@ public class QaDetailResponse {
         }
     }
 
-    public static QaDetailResponse from(QaQuestion question,
-            List<QaQuestionAttachment> attachments,
-            List<QaAnswer> answers) {
+    public static QaDetailResponse from(QaQuestion question, List<QaAnswer> answers) {
         return QaDetailResponse.builder()
                 .questionId(question.getQuestionId())
                 .categoryId(question.getCategoryId())
@@ -91,9 +70,7 @@ public class QaDetailResponse {
                 .createdBy(question.getCreatedBy())
                 // createdByName은 Service에서 채워야 함
                 .createdAt(question.getCreatedAt())
-                .attachments(attachments != null
-                        ? attachments.stream().map(AttachmentDto::from).collect(Collectors.toList())
-                        : Collections.emptyList())
+                .gcsImageUrl(question.getGcsImageUrl())
                 .answers(answers != null
                         ? answers.stream().map(AnswerDto::from).collect(Collectors.toList())
                         : Collections.emptyList())
