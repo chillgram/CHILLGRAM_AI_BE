@@ -9,7 +9,7 @@ public record BasicImageManifest(
     public record Candidate(
             int id,
             String label,
-            String gsUri,
+            String url,
             Map<String, Object> meta
     ) {}
 }

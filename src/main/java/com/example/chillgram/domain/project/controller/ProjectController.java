@@ -73,11 +73,11 @@ public class ProjectController {
                     ObjectNode payload = t.getT1();
                     FileStorage.StoredFile stored = t.getT2();
 
-                    if (stored.gsUri() == null || stored.gsUri().isBlank()) {
+                    if (stored.fileUrl() == null || stored.fileUrl().isBlank()) {
                         return Mono.error(ApiException.of(ErrorCode.INTERNAL_ERROR, "gsUri missing in StoredFile"));
                     }
 
-                    payload.put("inputUri", stored.gsUri());
+                    payload.put("inputUri", stored.fileUrl());
                     if (!payload.has("n"))
                         payload.put("n", 3);
 

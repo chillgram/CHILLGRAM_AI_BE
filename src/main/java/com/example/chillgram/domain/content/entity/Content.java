@@ -75,6 +75,9 @@ public class Content {
     @Column("banner_ratio")
     private Integer bannerRatio;
 
+    @Column("gcs_img_url")
+    private String gcsImgUrl;
+
     public void update(String title, String body, String status, String tags, String platform) {
         if (title != null)
             this.title = title;

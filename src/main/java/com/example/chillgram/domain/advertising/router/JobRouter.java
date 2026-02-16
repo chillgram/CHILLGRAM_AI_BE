@@ -14,12 +14,9 @@ public class JobRouter {
     RouterFunction<ServerResponse> jobAPIRoutes(JobHandler h) {
         return RouterFunctions.route()
                 .path("/api/jobs", b -> b
-//                        .POST("/projects/{projectId}/jobs", h::createJob)
                         .GET("/{jobId}", h::getJob)
-                        .GET("/{jobId}/image/{idx}", h::getBasicImage)
                         .POST("/basic-images", h::createBasicImagesJob)
-                        .GET("/{jobId}", h::getBasicImagesResult)
-                        .GET("/{jobId}/image/{idx}", h::getBasicImage)
+                        .GET("/basic-images/{jobId}", h::getBasicImagesResult)
                         .POST("/{jobId}/result", h::postResult)
                 )
                 .build();

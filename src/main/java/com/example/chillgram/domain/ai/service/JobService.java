@@ -27,18 +27,26 @@ public class JobService {
     private final ObjectMapper om;
     private final String jobsRoutingKey;
 
+    // ✅ gs:// -> https:// 변환용 (GcsFileStorage와 동일한 개념)
+    private final String gcsBucket;
+    private final String gcsPublicBaseUrl;
+
     public JobService(
             JobTaskRepository jobRepo,
             OutboxEventRepository outboxRepo,
             TransactionalOperator tx,
             ObjectMapper om,
-            @Value("${app.jobs.routing-key}") String jobsRoutingKey
+            @Value("${app.jobs.routing-key}") String jobsRoutingKey,
+            @Value("${gcs.bucket}") String gcsBucket,
+            @Value("${gcs.publicBaseUrl}") String gcsPublicBaseUrl
     ) {
         this.jobRepo = jobRepo;
         this.outboxRepo = outboxRepo;
         this.tx = tx;
         this.om = om;
         this.jobsRoutingKey = jobsRoutingKey;
+        this.gcsBucket = gcsBucket;
+        this.gcsPublicBaseUrl = stripTrailingSlash(gcsPublicBaseUrl);
     }
 
     public Mono<UUID> requestJob(long projectId, CreateJobRequest req, String traceId) {
@@ -75,8 +83,8 @@ public class JobService {
     }
 
     /**
-     * 리팩토링 포인트:
-     * - MQ는 중복 전달 가능 → 이미 SUCCEEDED/FAILED면 "에러"가 아니라 그냥 무시(멱등).
+     * ✅ 핵심 수정:
+     * - success=true면 outputUri(gs:// or https://)를 "프론트가 쓸 수 있는 값"으로 정규화해서 저장
      */
     public Mono<Void> applyResult(UUID jobId, JobResultRequest req) {
         OffsetDateTime now = OffsetDateTime.now();
@@ -92,12 +100,47 @@ public class JobService {
                         if (req.outputUri() == null || req.outputUri().isBlank()) {
                             return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "outputUri is required when success=true"));
                         }
-                        return jobRepo.markSucceeded(jobId, req.outputUri(), now).then();
+
+                        // ✅ gs://면 https로 변환해서 저장
+                        String normalized = normalizeOutputUri(req.outputUri());
+
+                        return jobRepo.markSucceeded(jobId, normalized, now).then();
                     } else {
                         String ec = (req.errorCode() == null || req.errorCode().isBlank()) ? "WORKER_FAILED" : req.errorCode();
                         String em = (req.errorMessage() == null) ? "" : req.errorMessage();
                         return jobRepo.markFailed(jobId, ec, em, now).then();
                     }
                 });
+    }
+
+    private String normalizeOutputUri(String outputUri) {
+        String u = outputUri.trim();
+
+        // 이미 https면 그대로
+        if (u.startsWith("http://") || u.startsWith("https://")) return u;
+
+        // gs://bucket/object -> publicBaseUrl/object 로 변환
+        if (u.startsWith("gs://")) {
+            String noScheme = u.substring("gs://".length());
+            int slash = noScheme.indexOf('/');
+            if (slash < 0) return u; // 이상한 값이면 그냥 저장(= 디버깅 목적)
+
+            String bucket = noScheme.substring(0, slash);
+            String object = noScheme.substring(slash + 1);
+
+            // bucket이 예상과 다르면 그대로 두는 게 낫다(잘못 변환 방지)
+            if (gcsBucket != null && !gcsBucket.isBlank() && !bucket.equals(gcsBucket)) {
+                return u;
+            }
+            return gcsPublicBaseUrl + "/" + object;
+        }
+
+        // 그 외 스킴은 그대로
+        return u;
+    }
+
+    private static String stripTrailingSlash(String s) {
+        if (s == null) return "";
+        return s.endsWith("/") ? s.substring(0, s.length() - 1) : s;
     }
 }
