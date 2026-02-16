@@ -280,4 +280,33 @@ public class AdService {
                                 JobEnums.JobType.BANNER,
                                 payload);
         }
+        public Mono<AdGuideResponse> generateAdGuides(Long projectId, AdGuideRequest request, Long companyId) {
+                return projectRepository.findById(projectId)
+                                .filter(p -> p.getCompanyId().equals(companyId))
+                                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.PROJECT_NOT_FOUND,
+                                                "Project not found: " + projectId)))
+                                .flatMap(project -> productRepository.findById(project.getProductId())
+                                                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND,
+                                                                "Product not found")))
+                                                .flatMap(product -> {
+                                                        AdGuideAiRequest aiReq = AdGuideAiRequest.of(project, product, request);
+                                                        return adCopyService.generateVisualGuidesMono(aiReq)
+                                                                        .map(options -> new AdGuideResponse(projectId, options));
+                                                }))
+                                .onErrorMap(ex -> (ex instanceof ApiException) ? ex
+                                                : ApiException.of(ErrorCode.AD_GUIDE_GENERATION_FAILED,
+                                                                ex.getMessage()));
+        }
+
+        public Mono<List<String>> generateCopyVariations(Long projectId, CopyVariationRequest request, Long companyId) {
+                return projectRepository.findById(projectId)
+                                .filter(p -> p.getCompanyId().equals(companyId))
+                                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.PROJECT_NOT_FOUND,
+                                                "Project not found: " + projectId)))
+                                .flatMap(project -> adCopyService.generateCopyVariationsMono(request.selectedOption(),
+                                                project.getAdMessageTarget()))
+                                .onErrorMap(ex -> (ex instanceof ApiException) ? ex
+                                                : ApiException.of(ErrorCode.AD_COPY_GENERATION_FAILED,
+                                                                ex.getMessage()));
+        }
 }

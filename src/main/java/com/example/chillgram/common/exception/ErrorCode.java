@@ -28,6 +28,7 @@ public enum ErrorCode {
     AD_PRODUCT_NOT_FOUND(HttpStatus.NOT_FOUND, "광고 대상 제품을 찾을 수 없습니다."),
     NOT_FOUND(HttpStatus.NOT_FOUND, "리소스를 찾을 수 없습니다."),
     USER_NOT_FOUND(HttpStatus.NOT_FOUND, "사용자를 찾을 수 없습니다."),
+    PROJECT_NOT_FOUND(HttpStatus.NOT_FOUND, "프로젝트를 찾을 수 없습니다."),
     CONFLICT(HttpStatus.CONFLICT, "요청이 현재 상태와 충돌합니다."),
     AD_GUIDE_GENERATION_FAILED(HttpStatus.INTERNAL_SERVER_ERROR, "광고 가이드 생성에 실패했습니다."),
     JOB_NOT_FOUND(HttpStatus.NOT_FOUND, "작업을 찾을 수 없습니다."),

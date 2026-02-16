@@ -6,6 +6,7 @@ import com.example.chillgram.domain.ai.dto.FinalCopyRequest;
 import com.example.chillgram.domain.ai.dto.FinalCopyResponse;
 import com.example.chillgram.domain.ai.dto.GuidelineRequest;
 import com.example.chillgram.domain.ai.dto.GuidelineResponse;
+import com.example.chillgram.domain.ai.dto.VisualGuideOption;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.ObjectProvider;
@@ -259,9 +260,181 @@ public class AdCopyService {
         return matcher.find() ? matcher.group(1).trim().replaceAll("^[:\\s]+", "") : "";
     }
 
+
     private String extractValue(String block, String key) {
         Pattern pattern = Pattern.compile("(?i)" + key + ":?\\s*([^\n]+)");
         Matcher matcher = pattern.matcher(block);
         return matcher.find() ? matcher.group(1).trim().replaceAll("\\*\\*", "") : "";
+    }
+
+    // =========================================================
+    // 신규: 1단계 비주얼 가이드라인 생성 (5개 옵션)
+    // =========================================================
+
+    public Mono<List<VisualGuideOption>> generateVisualGuidesMono(AdGuideAiRequest req) {
+        return Mono.fromCallable(() -> {
+            checkAiEnabled();
+            String prompt = buildWeightedPrompt(req) + "\n\n[출력 포맷]\n[OPTION 1]\n제품: ...\n장소: ...\n역동적 효과: ...\n글자 재질: ...\n스타일: ...\n(위 포맷으로 5개 옵션 작성)";
+
+            log.info("Visual Guides Prompt: {}", prompt);
+            String response = chatClient.prompt().user(prompt).call().content();
+            log.info("Visual Guides Response: {}", response);
+
+            return parseVisualGuides(response);
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    // =========================================================
+    // 신규: 2단계 광고 카피 베리에이션 생성
+    // =========================================================
+
+    public Mono<List<String>> generateCopyVariationsMono(VisualGuideOption option, Integer target) {
+        return Mono.fromCallable(() -> {
+            checkAiEnabled();
+            String prompt = buildCopyPrompt(option, target);
+
+            log.info("Copy Variations Prompt: {}", prompt);
+            String response = chatClient.prompt().user(prompt).call().content();
+            log.info("Copy Variations Response: {}", response);
+
+            return parseCopyVariations(response);
+        }).subscribeOn(Schedulers.boundedElastic());
+    }
+
+    // =========================================================
+    // Helper Methods
+    // =========================================================
+
+    private String buildWeightedPrompt(AdGuideAiRequest req) {
+        String emphasisInstruction;
+        int focus = req.adMessageFocus() != null ? req.adMessageFocus() : 2; // Default to balance
+
+        if (focus <= 1) { // 0, 1: 트렌드 중심
+            emphasisInstruction = """
+                [중요] **트렌드 정보**를 80% 비중으로 반영하세요. 
+                제품의 실제 후기는 20%만 참고하여 자연스럽게 녹여내세요.
+                최신 유행하는 밈(Meme)이나 챌린지 스타일을 적극 차용하세요.
+            """;
+        } else if (focus >= 3) { // 3, 4: 제품/리뷰 중심
+            emphasisInstruction = """
+                [중요] **고객 리뷰(제품 특징)**를 80% 비중으로 반영하세요. 
+                트렌드는 20%만 사용하여 톤앤매너를 맞추는 정도로만 활용하세요.
+                리뷰에서 언급된 구체적인 효능, 맛, 장점을 강력하게 어필하세요.
+            """;
+        } else { // 2: 균형
+            emphasisInstruction = """
+                [중요] 트렌드와 고객 리뷰를 50:50으로 균형 있게 반영하세요.
+            """;
+        }
+
+        return """
+            당신은 비주얼 디렉터입니다. 
+            아래 지침에 따라 5개의 서로 다른 광고 가이드라인을 작성하세요.
+            
+            %s
+            
+            [입력 데이터]
+            - 제품명: %s
+            - 요청사항: %s
+            - 트렌드: %s
+            - 리뷰:
+            %s
+            
+            각 옵션은 '[OPTION N]'으로 시작해야 합니다.
+        """.formatted(
+            emphasisInstruction,
+            req.productName(),
+            req.description(),
+            req.trendString(),
+            req.reviews() != null ? String.join("\n", req.reviews()) : ""
+        );
+    }
+
+    private String buildCopyPrompt(VisualGuideOption option, Integer target) {
+        return """
+            아래 비주얼 가이드라인에 어울리는 광고 카피 5개를 작성하세요.
+            각 카피는 [COPY 1] ~ [COPY 5] 형식으로 구분하세요.
+            
+            [비주얼 가이드라인]
+            - 제품: %s
+            - 장소: %s
+            - 효과: %s
+            - 스타일: %s
+            
+            [카피 목표]: %s
+        """.formatted(
+            option.product(),
+            option.place(),
+            option.effect(),
+            option.style(),
+            resolveTarget(target)
+        );
+    }
+
+    private String resolveTarget(Integer target) {
+        if (target == null) return "구매 전환 유도";
+        return switch (target) {
+            case 0 -> "브랜드 인지도 확산 및 노출 극대화 (Viral)";
+            case 1 -> "소비자의 공감대 형성 및 감성적 연결 (Empathy)";
+            case 2 -> "혜택 및 보상 강조를 통한 이목 집중 (Benefit)";
+            case 3 -> "이벤트 참여 및 댓글/공유 유도 (Engagement)";
+            case 4 -> "즉각적인 구매 전환 및 행동 유도 (Conversion)";
+            default -> "구매 전환 유도";
+        };
+    }
+
+    private List<VisualGuideOption> parseVisualGuides(String response) {
+        List<VisualGuideOption> options = new ArrayList<>();
+        String clean = (response == null ? "" : response).replaceAll("\\*\\*", "");
+        String[] blocks = clean.split("\\[OPTION\\s+\\d+\\]");
+        
+        int id = 1;
+        for (String block : blocks) {
+            if (block.isBlank()) continue;
+            String product = extractGuideField(block, "제품");
+            String place = extractGuideField(block, "장소");
+            String effect = extractGuideField(block, "역동적 효과");
+            String texture = extractGuideField(block, "글자 재질");
+            String style = extractGuideField(block, "스타일");
+            
+            if (!product.isEmpty() || !place.isEmpty()) {
+                options.add(new VisualGuideOption(id++, product, place, effect, texture, style));
+            }
+        }
+        
+        // Fallback
+        if (options.isEmpty()) {
+            options.add(new VisualGuideOption(1, "", "", "", "", clean.trim()));
+        }
+        return options;
+    }
+
+    private String extractGuideField(String block, String key) {
+        Pattern p = Pattern.compile("(?s)(?:" + key + ")\\s*:\\s*(.*?)(?=\\n(?:제품|장소|역동적 효과|글자 재질|스타일)\\s*:|$)");
+        Matcher m = p.matcher(block);
+        return m.find() ? m.group(1).trim() : "";
+    }
+
+    private List<String> parseCopyVariations(String response) {
+        if (response == null) return List.of();
+        String clean = response.replaceAll("\\*\\*", "");
+        
+        List<String> copies = new ArrayList<>();
+        Matcher m = Pattern.compile("\\[COPY\\s+\\d+\\]\\s*(.*?)(?=\\[COPY|$)", Pattern.DOTALL).matcher(clean);
+        
+        while (m.find()) {
+            copies.add(m.group(1).trim());
+        }
+        
+        if (copies.isEmpty()) {
+            // Fallback: 줄바꿈으로 시도
+            String[] lines = clean.split("\n");
+            for (String line : lines) {
+                String l = line.replaceAll("^\\d+[.\\)]\\s*", "").replaceAll("^-\\s*", "").trim();
+                if (!l.isBlank()) copies.add(l);
+            }
+        }
+        
+        return copies;
     }
 }
