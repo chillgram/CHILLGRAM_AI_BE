@@ -63,9 +63,6 @@ public class Project {
     @Column("userimg_gcs_url")
     private String userImgGcsUrl;
 
-    @Column("reviewUrl")
-    private String reviewUrl;
-
     public enum ProjectType {
         AD, // 광고
         DESIGN // 도안
