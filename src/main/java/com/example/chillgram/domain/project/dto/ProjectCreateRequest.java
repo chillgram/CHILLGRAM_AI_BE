@@ -14,8 +14,9 @@ public record ProjectCreateRequest(
 
         @Min(0) @Max(4) Integer adMessageTarget,
 
-        String projectType // "AD" or "DESIGN"
-) {
+        String projectType, // "AD" or "DESIGN"
+
+        String userImgGcsUrl) {
     public Project toEntity(Long productId, Long companyId, Long userId) {
         return Project.builder()
                 .productId(productId)
@@ -27,6 +28,7 @@ public record ProjectCreateRequest(
                 .projectType(parseProjectType())
                 .status("ACTIVE")
                 .createdBy(userId)
+                .userImgGcsUrl(userImgGcsUrl)
                 .build();
     }
 

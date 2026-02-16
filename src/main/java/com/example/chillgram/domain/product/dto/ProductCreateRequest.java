@@ -1,9 +1,7 @@
 package com.example.chillgram.domain.product.dto;
 
 import com.example.chillgram.domain.product.entity.Product;
-import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
-import org.hibernate.validator.constraints.URL;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -43,13 +41,6 @@ public class ProductCreateRequest {
     private Boolean isActive = false;
 
     /**
-     * 리뷰 URL (선택)
-     */
-    @Schema(description = "리뷰 URL")
-    @URL(message = "유효한 URL 형식이 아닙니다")
-    private String reviewUrl;
-
-    /**
      * DTO -> Entity 변환
      */
     public Product toEntity(Long companyId, Long createdBy) {
@@ -58,7 +49,7 @@ public class ProductCreateRequest {
                 .name(this.name)
                 .category(this.category)
                 .description(this.description)
-                .reviewUrl(this.reviewUrl)
+                .description(this.description)
                 .isActive(this.isActive != null ? this.isActive : false)
                 .createdBy(createdBy)
                 .build();

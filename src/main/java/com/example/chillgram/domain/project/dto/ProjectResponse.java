@@ -12,7 +12,9 @@ public record ProjectResponse(
         Integer adMessageFocus,
         Integer adMessageTarget,
         Long contentCount,
-        LocalDateTime createdAt) {
+        LocalDateTime createdAt,
+        String userImgGcsUrl,
+        String reviewUrl) {
     public static ProjectResponse of(Project project, Long contentCount) {
         return new ProjectResponse(
                 project.getId(),
@@ -22,6 +24,8 @@ public record ProjectResponse(
                 project.getAdMessageFocus(),
                 project.getAdMessageTarget(),
                 contentCount,
-                project.getCreatedAt());
+                project.getCreatedAt(),
+                project.getUserImgGcsUrl(),
+                project.getReviewUrl());
     }
 }

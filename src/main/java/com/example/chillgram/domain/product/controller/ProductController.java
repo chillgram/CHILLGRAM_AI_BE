@@ -8,6 +8,8 @@ import com.example.chillgram.domain.product.dto.ProductDashboardStats;
 import com.example.chillgram.domain.product.dto.ProductResponse;
 import com.example.chillgram.domain.product.dto.ProductUpdateRequest;
 import com.example.chillgram.domain.product.service.ProductService;
+import com.example.chillgram.domain.project.dto.ProjectResponse;
+import com.example.chillgram.domain.project.service.ProjectService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -21,6 +23,8 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/products")
 @RequiredArgsConstructor
@@ -29,6 +33,7 @@ import reactor.core.publisher.Mono;
 public class ProductController {
 
     private final ProductService productService;
+    private final ProjectService projectService;
 
     @GetMapping("/stats")
     @Operation(summary = "대시보드 통계 조회")
@@ -81,6 +86,13 @@ public class ProductController {
             @Parameter(description = "제품 ID", required = true) @PathVariable Long id,
             @Valid @RequestBody ProductUpdateRequest request) {
         return productService.updateProduct(id, request);
+    }
+
+    @GetMapping("/{id}/projects")
+    @Operation(summary = "제품별 프로젝트 목록 조회")
+    public Mono<List<ProjectResponse>> getProjectsByProduct(
+            @Parameter(description = "제품 ID", required = true) @PathVariable Long id) {
+        return projectService.getProjectsByProduct(id);
     }
 
 }
