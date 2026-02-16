@@ -21,6 +21,7 @@ public interface FileStorage {
     record StoredFile(
             String fileUrl,
             String mimeType,
+            String gsUri,
             Long fileSize) {
     }
 }

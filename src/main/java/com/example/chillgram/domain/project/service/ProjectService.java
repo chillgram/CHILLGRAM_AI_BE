@@ -1,12 +1,10 @@
 package com.example.chillgram.domain.project.service;
 
-import com.example.chillgram.domain.product.repository.ProductRepository;
 import com.example.chillgram.domain.content.repository.ContentRepository;
 import com.example.chillgram.domain.project.dto.ProjectCreateRequest;
 import com.example.chillgram.domain.project.dto.ProjectResponse;
 import com.example.chillgram.domain.project.entity.Project;
 import com.example.chillgram.domain.project.entity.ProjectImageAttachment;
-import com.example.chillgram.domain.project.repository.ProjectImageAttachmentRepository;
 import com.example.chillgram.domain.project.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,8 +23,6 @@ public class ProjectService {
 
         private final ProjectRepository projectRepository;
         private final ContentRepository contentRepository;
-        private final ProjectImageAttachmentRepository projectImageAttachmentRepository;
-        private final ProductRepository productRepository;
 
         /**
          * 제품의 프로젝트 목록 조회 (Content 개수 포함)
@@ -39,35 +35,29 @@ public class ProjectService {
                                 .collectList();
         }
 
-        /**
-         * 프로젝트 생성
-         */
-        @Transactional
-        public Mono<ProjectResponse> createProject(Long productId, Long companyId, Long userId,
-                        ProjectCreateRequest request,
-                        List<String> imageUrls) {
-                Project project = request.toEntity(productId, companyId, userId);
-
-                return projectRepository.save(project)
-                                .flatMap(savedProject -> {
-                                        if (imageUrls == null || imageUrls.isEmpty()) {
-                                                return Mono.just(savedProject);
-                                        }
-                                        return Flux.fromIterable(imageUrls)
-                                                        .map(url -> ProjectImageAttachment.builder()
-                                                                        .projectId(savedProject.getId())
-                                                                        .fileUrl(url)
-                                                                        .build())
-                                                        .flatMap(projectImageAttachmentRepository::save)
-                                                        .then(Mono.just(savedProject));
-                                })
-                                .flatMap(savedProject -> productRepository.findById(productId)
-                                                .flatMap(product -> {
-                                                        product.setIsActive(true);
-                                                        return productRepository.save(product);
-                                                })
-                                                .thenReturn(savedProject))
-                                .map(savedProject -> ProjectResponse.of(savedProject, 0L));
-        }
+//        /**
+//         * 프로젝트 생성
+//         */
+//        @Transactional
+//        public Mono<ProjectResponse> createProject(Long productId, Long companyId, Long userId,
+//                        ProjectCreateRequest request,
+//                        List<String> imageUrls) {
+//                Project project = request.toEntity(productId, companyId, userId);
+//
+//                return projectRepository.save(project)
+//                                .flatMap(savedProject -> {
+//                                        if (imageUrls == null || imageUrls.isEmpty()) {
+//                                                return Mono.just(savedProject);
+//                                        }
+//                                        return Flux.fromIterable(imageUrls)
+//                                                        .map(url -> ProjectImageAttachment.builder()
+//                                                                        .projectId(savedProject.getId())
+//                                                                        .fileUrl(url)
+//                                                                        .build())
+//                                                        .flatMap(projectImageAttachmentRepository::save)
+//                                                        .then(Mono.just(savedProject));
+//                                })
+//                                .map(savedProject -> ProjectResponse.of(savedProject, 0L));
+//        }
 
 }

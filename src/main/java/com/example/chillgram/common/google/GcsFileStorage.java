@@ -59,10 +59,12 @@ public class GcsFileStorage implements FileStorage {
                             storage.create(blobInfo, Files.readAllBytes(temp));
 
                             String url = publicBaseUrl + "/" + objectName;
+                            String gsUri = "gs://" + bucket + "/" + objectName;
 
                             return new StoredFile(
                                     url,
                                     blobInfo.getContentType(),
+                                    gsUri,
                                     Files.size(temp));
                         }).subscribeOn(Schedulers.boundedElastic())),
                 temp -> Mono.fromRunnable(() -> {
@@ -72,4 +74,49 @@ public class GcsFileStorage implements FileStorage {
                     }
                 }).subscribeOn(Schedulers.boundedElastic()));
     }
+
+    public Mono<byte[]> fetchBytes(String gsUri) {
+        return Mono.fromCallable(() -> {
+            // gs://bucket/path/to/file.png 파싱
+            if (!gsUri.startsWith("gs://")) throw new IllegalArgumentException("not gs:// uri: " + gsUri);
+            String noScheme = gsUri.substring("gs://".length());
+            int slash = noScheme.indexOf('/');
+            if (slash < 0) throw new IllegalArgumentException("invalid gs uri: " + gsUri);
+            String bucket = noScheme.substring(0, slash);
+            String object = noScheme.substring(slash + 1);
+
+            var blob = storage.get(bucket, object);
+            if (blob == null) throw new IllegalStateException("gcs object not found: " + gsUri);
+            return blob.getContent();
+        });
+    }
+
+    public Mono<StoredFile> storeFixed(FilePart filePart, String objectName) {
+        String safeName = filePart.filename().replaceAll("[\\\\/\\r\\n]", "_");
+
+        return Mono.usingWhen(
+                Mono.fromCallable(() -> Files.createTempFile("upload_", "_" + safeName))
+                        .subscribeOn(Schedulers.boundedElastic()),
+                temp -> filePart.transferTo(temp)
+                        .then(Mono.fromCallable(() -> {
+                            BlobId blobId = BlobId.of(bucket, objectName);
+                            BlobInfo blobInfo = BlobInfo.newBuilder(blobId)
+                                    .setContentType(
+                                            filePart.headers().getContentType() != null
+                                                    ? filePart.headers().getContentType().toString()
+                                                    : "application/octet-stream")
+                                    .build();
+
+                            storage.create(blobInfo, Files.readAllBytes(temp));
+
+                            String url = publicBaseUrl + "/" + objectName;
+                            String gsUri = "gs://" + bucket + "/" + objectName;
+
+                            return new StoredFile(url, blobInfo.getContentType(), gsUri, Files.size(temp));
+                        }).subscribeOn(Schedulers.boundedElastic())),
+                temp -> Mono.fromRunnable(() -> { try { Files.deleteIfExists(temp); } catch (Exception ignored) {} })
+                        .subscribeOn(Schedulers.boundedElastic())
+        );
+    }
+
 }

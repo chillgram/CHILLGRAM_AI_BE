@@ -16,6 +16,10 @@ public class JobRouter {
                 .path("/api", b -> b
                         .POST("/projects/{projectId}/jobs", h::createJob)
                         .GET("/jobs/{jobId}", h::getJob)
+                        .GET("/{jobId}/image/{idx}", h::getBasicImage)
+                        .POST("/jobs/basic-images", h::createBasicImagesJob)
+                        .GET("/{jobId}", h::getBasicImagesResult)
+                        .GET("/{jobId}/image/{idx}", h::getBasicImage)
                         .POST("/jobs/{jobId}/result", h::postResult)
                 )
                 .build();
