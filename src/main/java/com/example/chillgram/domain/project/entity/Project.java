@@ -63,7 +63,7 @@ public class Project {
     @Column("userimg_gcs_url")
     private String userImgGcsUrl;
 
-    @Column("reviewurl")
+    @Column("reviewUrl")
     private String reviewUrl;
 
     public enum ProjectType {
