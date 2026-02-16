@@ -5,13 +5,11 @@ import com.example.chillgram.domain.content.repository.ContentRepository;
 import com.example.chillgram.domain.project.dto.ProjectCreateRequest;
 import com.example.chillgram.domain.project.dto.ProjectResponse;
 import com.example.chillgram.domain.project.entity.Project;
-import com.example.chillgram.domain.project.entity.Project;
 import com.example.chillgram.domain.project.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.List;

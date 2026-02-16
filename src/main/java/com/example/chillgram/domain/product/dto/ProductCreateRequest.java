@@ -49,7 +49,6 @@ public class ProductCreateRequest {
                 .name(this.name)
                 .category(this.category)
                 .description(this.description)
-                .description(this.description)
                 .isActive(this.isActive != null ? this.isActive : false)
                 .createdBy(createdBy)
                 .build();
