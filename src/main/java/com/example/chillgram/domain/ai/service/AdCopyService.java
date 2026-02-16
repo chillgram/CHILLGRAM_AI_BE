@@ -63,7 +63,8 @@ public class AdCopyService {
         String prompt = """
                 당신은 한국 시장의 퍼포먼스 마케터이자 카피라이터입니다.
                 아래 입력을 바탕으로 '광고 가이드라인'을 작성하세요.
-                반드시 지정된 포맷을 지키세요. 포맷을 어기면 실패로 간주됩니다.
+                모든 내용은 반드시 한국어로 작성해야 합니다.
+                반드시 지정된 포맷을 지키고, 설명이나 생각 과정 등 부가적인 텍스트는 출력하지 마세요.
 
                 [GUIDE_START]
                 섹션: 핵심 메시지
@@ -105,10 +106,11 @@ public class AdCopyService {
                 request.adFocus(),
                 request.trendKeywords(),
                 request.hashtags(),
-                request.styleSummary()
-        );
+                request.styleSummary());
 
-        String response = chatClient.prompt().user(prompt).call().content();
+        String response = chatClient.prompt()
+                .system("당신은 한국어만 사용하는 AI입니다. 모든 응답을 반드시 한국어로 작성하세요. 영어로 응답하지 마세요.")
+                .user(prompt).call().content();
         log.info("광고 가이드라인 생성 응답: {}", response);
 
         return parseGuideSections(response);
@@ -119,7 +121,8 @@ public class AdCopyService {
         String body = clean;
 
         Matcher range = Pattern.compile("(?s)\\[GUIDE_START\\](.*?)\\[GUIDE_END\\]").matcher(clean);
-        if (range.find()) body = range.group(1);
+        if (range.find())
+            body = range.group(1);
 
         List<AdGuideAiResponse.Section> sections = new ArrayList<>();
 
@@ -160,10 +163,12 @@ public class AdCopyService {
                 톤: (친근한, 전문적인, 유머러스한 등)
                 [가이드라인 끝]
 
-                총 5개를 작성하세요.
+                총 5개를 작성하세요. 모든 내용은 반드시 한국어로 작성하세요.
                 """.formatted(request.keyword(), request.productName());
 
-        String response = chatClient.prompt().user(prompt).call().content();
+        String response = chatClient.prompt()
+                .system("당신은 한국어만 사용하는 AI입니다. 모든 응답을 반드시 한국어로 작성하세요. 영어로 응답하지 마세요.")
+                .user(prompt).call().content();
         log.info("가이드라인 생성 응답: {}", response);
 
         List<GuidelineResponse.Guideline> guidelines = parseGuidelines(response);
@@ -201,7 +206,9 @@ public class AdCopyService {
                 request.selectedDescription(),
                 request.tone());
 
-        String response = chatClient.prompt().user(prompt).call().content();
+        String response = chatClient.prompt()
+                .system("당신은 한국어만 사용하는 AI입니다. SHORTFORM과 BANNER 프롬프트를 제외한 모든 응답을 한국어로 작성하세요.")
+                .user(prompt).call().content();
         log.info("최종 카피 생성 응답: {}", response);
 
         return parseFinalResponse(request.productName(), request.selectedConcept(), response);
@@ -213,7 +220,8 @@ public class AdCopyService {
 
         for (String block : blocks) {
             String cleanBlock = block.split("\\[가이드라인 끝\\]")[0];
-            if (cleanBlock.trim().length() < 10) continue;
+            if (cleanBlock.trim().length() < 10)
+                continue;
 
             try {
                 int id = Integer.parseInt(extractValue(cleanBlock, "ID").replaceAll("[^0-9]", ""));
@@ -238,11 +246,16 @@ public class AdCopyService {
         String sns = extractByTag(cleanResponse, "SNS");
         String reason = extractByTag(cleanResponse, "REASON");
 
-        if (copy.isEmpty()) copy = extractSectionFallback(cleanResponse, "광고 카피");
-        if (shortform.isEmpty()) shortform = extractSectionFallback(cleanResponse, "숏폼 프롬프트");
-        if (banner.isEmpty()) banner = extractSectionFallback(cleanResponse, "배너 프롬프트");
-        if (sns.isEmpty()) sns = extractSectionFallback(cleanResponse, "SNS 캡션");
-        if (reason.isEmpty()) reason = extractSectionFallback(cleanResponse, "선정 이유");
+        if (copy.isEmpty())
+            copy = extractSectionFallback(cleanResponse, "광고 카피");
+        if (shortform.isEmpty())
+            shortform = extractSectionFallback(cleanResponse, "숏폼 프롬프트");
+        if (banner.isEmpty())
+            banner = extractSectionFallback(cleanResponse, "배너 프롬프트");
+        if (sns.isEmpty())
+            sns = extractSectionFallback(cleanResponse, "SNS 캡션");
+        if (reason.isEmpty())
+            reason = extractSectionFallback(cleanResponse, "선정 이유");
 
         return FinalCopyResponse.of(productName, concept, copy, shortform, banner, sns, reason);
     }
@@ -260,7 +273,6 @@ public class AdCopyService {
         return matcher.find() ? matcher.group(1).trim().replaceAll("^[:\\s]+", "") : "";
     }
 
-
     private String extractValue(String block, String key) {
         Pattern pattern = Pattern.compile("(?i)" + key + ":?\\s*([^\n]+)");
         Matcher matcher = pattern.matcher(block);
@@ -274,10 +286,13 @@ public class AdCopyService {
     public Mono<List<VisualGuideOption>> generateVisualGuidesMono(AdGuideAiRequest req) {
         return Mono.fromCallable(() -> {
             checkAiEnabled();
-            String prompt = buildWeightedPrompt(req) + "\n\n[출력 포맷]\n[OPTION 1]\n제품: ...\n장소: ...\n역동적 효과: ...\n글자 재질: ...\n스타일: ...\n(위 포맷으로 5개 옵션 작성)";
+            String prompt = buildWeightedPrompt(req)
+                    + "\n\n[출력 포맷]\n반드시 아래 형식을 지키고, 모든 값은 한국어로 작성하세요. 생각 과정은 생략하세요.\n\n[OPTION 1]\n제품: ...\n장소: ...\n역동적 효과: ...\n글자 재질: ...\n스타일: ...\n(위 포맷으로 5개 옵션 작성)";
 
             log.info("Visual Guides Prompt: {}", prompt);
-            String response = chatClient.prompt().user(prompt).call().content();
+            String response = chatClient.prompt()
+                    .system("당신은 한국어만 사용하는 AI입니다. 모든 응답을 반드시 한국어로 작성하세요. 영어로 응답하지 마세요.")
+                    .user(prompt).call().content();
             log.info("Visual Guides Response: {}", response);
 
             return parseVisualGuides(response);
@@ -294,7 +309,9 @@ public class AdCopyService {
             String prompt = buildCopyPrompt(option, target);
 
             log.info("Copy Variations Prompt: {}", prompt);
-            String response = chatClient.prompt().user(prompt).call().content();
+            String response = chatClient.prompt()
+                    .system("당신은 한국어만 사용하는 AI입니다. 모든 응답을 반드시 한국어로 작성하세요. 영어로 응답하지 마세요.")
+                    .user(prompt).call().content();
             log.info("Copy Variations Response: {}", response);
 
             return parseCopyVariations(response);
@@ -311,68 +328,69 @@ public class AdCopyService {
 
         if (focus <= 1) { // 0, 1: 트렌드 중심
             emphasisInstruction = """
-                [중요] **트렌드 정보**를 80% 비중으로 반영하세요. 
-                제품의 실제 후기는 20%만 참고하여 자연스럽게 녹여내세요.
-                최신 유행하는 밈(Meme)이나 챌린지 스타일을 적극 차용하세요.
-            """;
+                        [중요] **트렌드 정보**를 80% 비중으로 반영하세요.
+                        제품의 실제 후기는 20%만 참고하여 자연스럽게 녹여내세요.
+                        최신 유행하는 밈(Meme)이나 챌린지 스타일을 적극 차용하세요.
+                    """;
         } else if (focus >= 3) { // 3, 4: 제품/리뷰 중심
             emphasisInstruction = """
-                [중요] **고객 리뷰(제품 특징)**를 80% 비중으로 반영하세요. 
-                트렌드는 20%만 사용하여 톤앤매너를 맞추는 정도로만 활용하세요.
-                리뷰에서 언급된 구체적인 효능, 맛, 장점을 강력하게 어필하세요.
-            """;
+                        [중요] **고객 리뷰(제품 특징)**를 80% 비중으로 반영하세요.
+                        트렌드는 20%만 사용하여 톤앤매너를 맞추는 정도로만 활용하세요.
+                        리뷰에서 언급된 구체적인 효능, 맛, 장점을 강력하게 어필하세요.
+                    """;
         } else { // 2: 균형
             emphasisInstruction = """
-                [중요] 트렌드와 고객 리뷰를 50:50으로 균형 있게 반영하세요.
-            """;
+                        [중요] 트렌드와 고객 리뷰를 50:50으로 균형 있게 반영하세요.
+                    """;
         }
 
         return """
-            당신은 비주얼 디렉터입니다. 
-            아래 지침에 따라 5개의 서로 다른 광고 가이드라인을 작성하세요.
-            
-            %s
-            
-            [입력 데이터]
-            - 제품명: %s
-            - 요청사항: %s
-            - 트렌드: %s
-            - 리뷰:
-            %s
-            
-            각 옵션은 '[OPTION N]'으로 시작해야 합니다.
-        """.formatted(
-            emphasisInstruction,
-            req.productName(),
-            req.description(),
-            req.trendString(),
-            req.reviews() != null ? String.join("\n", req.reviews()) : ""
-        );
+                    당신은 비주얼 디렉터입니다.
+                    아래 지침에 따라 5개의 서로 다른 광고 가이드라인을 작성하세요.
+                    모든 필드(제품, 장소, 효과, 재질, 스타일)는 반드시 한국어로 작성해야 합니다.
+
+                    %s
+
+                    [입력 데이터]
+                    - 제품명: %s
+                    - 요청사항: %s
+                    - 트렌드: %s
+                    - 리뷰:
+                    %s
+
+                    각 옵션은 '[OPTION N]'으로 시작해야 하며, 서론이나 결론 없이 지정된 데이터만 출력하세요.
+                """.formatted(
+                emphasisInstruction,
+                req.productName(),
+                req.description(),
+                req.trendString(),
+                req.reviews() != null ? String.join("\n", req.reviews()) : "");
     }
 
     private String buildCopyPrompt(VisualGuideOption option, Integer target) {
         return """
-            아래 비주얼 가이드라인에 어울리는 광고 카피 5개를 작성하세요.
-            각 카피는 [COPY 1] ~ [COPY 5] 형식으로 구분하세요.
-            
-            [비주얼 가이드라인]
-            - 제품: %s
-            - 장소: %s
-            - 효과: %s
-            - 스타일: %s
-            
-            [카피 목표]: %s
-        """.formatted(
-            option.product(),
-            option.place(),
-            option.effect(),
-            option.style(),
-            resolveTarget(target)
-        );
+                    아래 비주얼 가이드라인에 어울리는 광고 카피 5개를 작성하세요.
+                    모든 카피는 반드시 한국어로 작성되어야 합니다.
+                    서론(Thinking process 등)은 절대 포함하지 말고 [COPY 1] ~ [COPY 5] 내용만 출력하세요.
+
+                    [비주얼 가이드라인]
+                    - 제품: %s
+                    - 장소: %s
+                    - 효과: %s
+                    - 스타일: %s
+
+                    [카피 목표]: %s
+                """.formatted(
+                option.product(),
+                option.place(),
+                option.effect(),
+                option.style(),
+                resolveTarget(target));
     }
 
     private String resolveTarget(Integer target) {
-        if (target == null) return "구매 전환 유도";
+        if (target == null)
+            return "구매 전환 유도";
         return switch (target) {
             case 0 -> "브랜드 인지도 확산 및 노출 극대화 (Viral)";
             case 1 -> "소비자의 공감대 형성 및 감성적 연결 (Empathy)";
@@ -387,24 +405,25 @@ public class AdCopyService {
         List<VisualGuideOption> options = new ArrayList<>();
         String clean = (response == null ? "" : response).replaceAll("\\*\\*", "");
         String[] blocks = clean.split("\\[OPTION\\s+\\d+\\]");
-        
+
         int id = 1;
         for (String block : blocks) {
-            if (block.isBlank()) continue;
+            if (block.isBlank())
+                continue;
             String product = extractGuideField(block, "제품");
             String place = extractGuideField(block, "장소");
             String effect = extractGuideField(block, "역동적 효과");
             String texture = extractGuideField(block, "글자 재질");
             String style = extractGuideField(block, "스타일");
-            
+
             if (!product.isEmpty() || !place.isEmpty()) {
                 options.add(new VisualGuideOption(id++, product, place, effect, texture, style));
             }
         }
-        
-        // Fallback
+
+        // Fallback: 파싱 실패 시 raw 텍스트를 넣지 않고 빈 리스트 반환
         if (options.isEmpty()) {
-            options.add(new VisualGuideOption(1, "", "", "", "", clean.trim()));
+            log.warn("Visual guide parsing failed. Raw response: {}", clean);
         }
         return options;
     }
@@ -416,25 +435,30 @@ public class AdCopyService {
     }
 
     private List<String> parseCopyVariations(String response) {
-        if (response == null) return List.of();
+        if (response == null)
+            return List.of();
         String clean = response.replaceAll("\\*\\*", "");
-        
+
         List<String> copies = new ArrayList<>();
         Matcher m = Pattern.compile("\\[COPY\\s+\\d+\\]\\s*(.*?)(?=\\[COPY|$)", Pattern.DOTALL).matcher(clean);
-        
+
         while (m.find()) {
             copies.add(m.group(1).trim());
         }
-        
+
         if (copies.isEmpty()) {
-            // Fallback: 줄바꿈으로 시도
+            // Fallback: 줄바꿈으로 시도 (thinking 잔여 텍스트 필터링)
             String[] lines = clean.split("\n");
             for (String line : lines) {
                 String l = line.replaceAll("^\\d+[.\\)]\\s*", "").replaceAll("^-\\s*", "").trim();
-                if (!l.isBlank()) copies.add(l);
+                if (!l.isBlank() && l.length() > 5 && !l.toLowerCase().startsWith("okay") && !l.toLowerCase().startsWith("my thought"))
+                    copies.add(l);
+            }
+            if (copies.isEmpty()) {
+                log.warn("Copy variation parsing failed. Raw response: {}", clean);
             }
         }
-        
+
         return copies;
     }
 }
