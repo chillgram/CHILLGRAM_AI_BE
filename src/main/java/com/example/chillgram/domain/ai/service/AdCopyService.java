@@ -370,8 +370,12 @@ public class AdCopyService {
     private String buildCopyPrompt(VisualGuideOption option, Integer target) {
         return """
                     아래 비주얼 가이드라인에 어울리는 광고 카피 5개를 작성하세요.
-                    모든 카피는 반드시 한국어로 작성되어야 합니다.
-                    서론(Thinking process 등)은 절대 포함하지 말고 [COPY 1] ~ [COPY 5] 내용만 출력하세요.
+
+                    [규칙]
+                    - 각 카피는 처음부터 10자 이내로 구상하여 작성 (긴 문장을 자르지 말고, 10자 안에 담길 수 있는 강렬한 문구를 새로 만들 것)
+                    - 군더더기 설명 없이 임팩트 있는 한 마디만
+                    - 모든 카피는 반드시 한국어로 작성
+                    - 서론/설명/Thinking 없이 [COPY 1] ~ [COPY 5] 내용만 출력
 
                     [비주얼 가이드라인]
                     - 제품: %s
