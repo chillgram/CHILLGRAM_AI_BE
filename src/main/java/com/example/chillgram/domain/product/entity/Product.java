@@ -35,6 +35,9 @@ public class Product {
     @Column("description")
     private String description;
 
+    @Column("review_url")
+    private String reviewUrl;
+
     @Column("is_active")
     @Builder.Default
     private Boolean isActive = false;
@@ -66,6 +69,9 @@ public class Product {
         }
         if (request.getDescription() != null) {
             this.description = request.getDescription();
+        }
+        if (request.getReviewUrl() != null) {
+            this.reviewUrl = request.getReviewUrl();
         }
 
         if (request.getIsActive() != null) {

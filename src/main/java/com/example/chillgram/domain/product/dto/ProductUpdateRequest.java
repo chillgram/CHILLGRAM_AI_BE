@@ -11,6 +11,8 @@ import lombok.NoArgsConstructor;
  *
  * 모든 필드가 Optional - null이면 기존 값 유지
  */
+import io.swagger.v3.oas.annotations.media.Schema;
+
 @Getter
 @Builder
 @NoArgsConstructor
@@ -36,5 +38,11 @@ public class ProductUpdateRequest {
      * 활성화 여부 (null이면 기존 값 유지)
      */
     private Boolean isActive;
+
+    /**
+     * 리뷰 URL (null이면 기존 값 유지)
+     */
+    @Schema(description = "리뷰 URL (null이면 기존 값 유지)", example = "https://example.com/review/123")
+    private String reviewUrl;
 
 }

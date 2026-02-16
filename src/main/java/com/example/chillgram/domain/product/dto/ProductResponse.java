@@ -6,6 +6,8 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 @Data
 @Builder
 public class ProductResponse {
@@ -14,6 +16,8 @@ public class ProductResponse {
     private String name;
     private String category;
     private String description;
+    @Schema(description = "리뷰 URL")
+    private String reviewUrl;
 
     private Boolean isActive;
     private Long createdBy;
@@ -29,6 +33,7 @@ public class ProductResponse {
                 .name(product.getName())
                 .category(product.getCategory())
                 .description(product.getDescription())
+                .reviewUrl(product.getReviewUrl())
 
                 .isActive(product.getIsActive())
                 .createdBy(product.getCreatedBy())

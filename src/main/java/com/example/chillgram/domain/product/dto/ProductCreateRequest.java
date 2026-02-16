@@ -12,6 +12,8 @@ import lombok.NoArgsConstructor;
  * 제품 등록 요청 DTO
  * POST /api/products
  */
+import io.swagger.v3.oas.annotations.media.Schema;
+
 @Getter
 @Builder
 @NoArgsConstructor
@@ -41,6 +43,12 @@ public class ProductCreateRequest {
     private Boolean isActive = false;
 
     /**
+     * 리뷰 URL (선택)
+     */
+    @Schema(description = "리뷰 URL (선택)", example = "https://example.com/review/123")
+    private String reviewUrl;
+
+    /**
      * DTO -> Entity 변환
      */
     public Product toEntity(Long companyId, Long createdBy) {
@@ -51,6 +59,7 @@ public class ProductCreateRequest {
                 .description(this.description)
                 .isActive(this.isActive != null ? this.isActive : false)
                 .createdBy(createdBy)
+                .reviewUrl(this.reviewUrl)
                 .build();
     }
 }
