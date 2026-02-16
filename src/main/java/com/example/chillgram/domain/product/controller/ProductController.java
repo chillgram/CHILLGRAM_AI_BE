@@ -48,7 +48,7 @@ public class ProductController {
             @Parameter(description = "페이지 크기") @RequestParam(defaultValue = "10") int size,
             @Parameter(description = "검색어") @RequestParam(required = false) String search) {
 
-        if (principal == null) {
+        if (principal.userId() == 0) {
             throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보가 없습니다.");
         }
         return productService.getProductList(principal.companyId(), search, PageRequest.of(page, size));

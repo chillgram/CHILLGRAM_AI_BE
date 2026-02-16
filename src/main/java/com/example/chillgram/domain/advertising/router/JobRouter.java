@@ -13,14 +13,14 @@ public class JobRouter {
     @Bean
     RouterFunction<ServerResponse> jobAPIRoutes(JobHandler h) {
         return RouterFunctions.route()
-                .path("/api", b -> b
-                        .POST("/projects/{projectId}/jobs", h::createJob)
-                        .GET("/jobs/{jobId}", h::getJob)
+                .path("/api/jobs", b -> b
+//                        .POST("/projects/{projectId}/jobs", h::createJob)
+                        .GET("/{jobId}", h::getJob)
                         .GET("/{jobId}/image/{idx}", h::getBasicImage)
-                        .POST("/jobs/basic-images", h::createBasicImagesJob)
+                        .POST("/basic-images", h::createBasicImagesJob)
                         .GET("/{jobId}", h::getBasicImagesResult)
                         .GET("/{jobId}/image/{idx}", h::getBasicImage)
-                        .POST("/jobs/{jobId}/result", h::postResult)
+                        .POST("/{jobId}/result", h::postResult)
                 )
                 .build();
     }
