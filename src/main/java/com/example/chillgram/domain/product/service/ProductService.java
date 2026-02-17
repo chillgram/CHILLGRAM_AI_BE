@@ -18,6 +18,7 @@ import com.example.chillgram.domain.product.dto.ProductResponse;
 import com.example.chillgram.domain.product.dto.ProductUpdateRequest;
 import com.example.chillgram.domain.product.entity.Product;
 import com.example.chillgram.domain.product.repository.ProductRepository;
+import com.example.chillgram.domain.project.repository.ProjectRepository;
 import com.example.chillgram.common.security.AuthPrincipal;
 import com.example.chillgram.domain.user.domain.AppUser;
 import com.example.chillgram.domain.user.repository.AppUserRepository;
@@ -50,6 +51,7 @@ public class ProductService {
         private final GcsFileStorage gcs;
         private final ContentRepository contentRepo;
         private final ContentAssetRepository contentAssetRepository;
+        private final ProjectRepository projectRepository;
         private final TransactionalOperator tx;
         private final ObjectMapper om;
 
@@ -61,6 +63,7 @@ public class ProductService {
                         GcsFileStorage gcs,
                         ContentRepository contentRepo,
                         ContentAssetRepository contentAssetRepository,
+                        ProjectRepository projectRepository,
                         TransactionalOperator tx,
                         ObjectMapper om) {
                 this.productRepository = productRepository;
@@ -70,6 +73,7 @@ public class ProductService {
                 this.gcs = gcs;
                 this.contentRepo = contentRepo;
                 this.contentAssetRepository = contentAssetRepository;
+                this.projectRepository = projectRepository;
                 this.tx = tx;
                 this.om = om;
         }
@@ -248,90 +252,137 @@ public class ProductService {
                                                 return Mono.error(ApiException.of(ErrorCode.FORBIDDEN, "not allowed"));
                                         }
 
-                                        String objectBase = "mockuptmp/" + UUID.randomUUID();
+                                        // 1. 프로젝트 조회 & 검증
+                                        return projectRepository.findById(projectId)
+                                                        .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.NOT_FOUND,
+                                                                        "Project not found")))
+                                                        .flatMap(project -> {
+                                                                // [New] Product-Project 소속 검증
+                                                                if (!project.getProductId().equals(productId)) {
+                                                                        return Mono.error(ApiException.of(
+                                                                                        ErrorCode.FORBIDDEN,
+                                                                                        "Project does not belong to this product"));
+                                                                }
 
-                                        // 1. GCS 업로드 (트랜잭션 외부)
-                                        return gcs.storeFixed(file, objectBase)
-                                                        .flatMap(stored -> {
-                                                                // Content 엔티티 생성
-                                                                Content content = Content.builder()
-                                                                                .companyId(principal.companyId())
-                                                                                .productId(productId)
-                                                                                .projectId(projectId)
-                                                                                // [Fix] 사용자 요청: 원본 도면 ->
-                                                                                // mockup_img_url, 생성된 목업 -> gcs_img_url
-                                                                                .mockupImgUrl(stored.gsUri()) // 원본 도면
-                                                                                .gcsImgUrl(null) // 생성된 목업은 아직 없음
-                                                                                .status("PENDING")
-                                                                                .contentType("IMAGE")
-                                                                                .createdBy(principal.userId())
-                                                                                .createdAt(LocalDateTime.now())
-                                                                                .updatedAt(LocalDateTime.now())
-                                                                                .build();
+                                                                // [New] 베이스 이미지 검증
+                                                                if (project.getUserImgGcsUrl() == null
+                                                                                || project.getUserImgGcsUrl()
+                                                                                                .isBlank()) {
+                                                                        return Mono.error(ApiException.of(
+                                                                                        ErrorCode.VALIDATION_FAILED,
+                                                                                        "Project base image (userImgGcsUrl) is missing"));
+                                                                }
 
-                                                                ObjectNode payload = om.createObjectNode();
-                                                                payload.put("inputUri", stored.gsUri());
+                                                                String objectBase = "mockuptmp/" + UUID.randomUUID();
 
-                                                                CreateJobRequest jobReq = new CreateJobRequest(
-                                                                                JobType.DIELINE, payload);
+                                                                // 2. GCS 업로드 (트랜잭션 외부)
+                                                                return gcs.storeFixed(file, objectBase)
+                                                                                .flatMap(stored -> {
+                                                                                        // Content 엔티티 생성
+                                                                                        Content content = Content
+                                                                                                        .builder()
+                                                                                                        .companyId(principal
+                                                                                                                        .companyId())
+                                                                                                        .productId(productId)
+                                                                                                        .projectId(projectId)
+                                                                                                        // [Fix] 사용자 요청:
+                                                                                                        // 원본 도면 ->
+                                                                                                        // mockup_img_url,
+                                                                                                        // 생성된 목업 ->
+                                                                                                        // gcs_img_url
+                                                                                                        .mockupImgUrl(stored
+                                                                                                                        .gsUri()) // 원본
+                                                                                                                                  // 도면
+                                                                                                        .gcsImgUrl(null) // 생성된
+                                                                                                                         // 목업은
+                                                                                                                         // 아직
+                                                                                                                         // 없음
+                                                                                                        .status("PENDING")
+                                                                                                        .contentType("IMAGE")
+                                                                                                        .createdBy(principal
+                                                                                                                        .userId())
+                                                                                                        .createdAt(LocalDateTime
+                                                                                                                        .now())
+                                                                                                        .updatedAt(LocalDateTime
+                                                                                                                        .now())
+                                                                                                        .build();
 
-                                                                // 2. DB 트랜잭션 (BASIC과 동일 방식: requestJob → Outbox →
-                                                                // Debezium)
-                                                                return tx.transactional(
-                                                                                contentRepo.save(content)
-                                                                                                .flatMap(savedContent -> {
-                                                                                                        payload.put("contentId",
-                                                                                                                        savedContent.getId());
-                                                                                                        var asset = com.example.chillgram.domain.content.entity.ContentAsset
-                                                                                                                        .builder()
-                                                                                                                        .contentId(savedContent
-                                                                                                                                        .getId())
-                                                                                                                        .assetType("MOCKUP")
-                                                                                                                        .fileUrl(stored.fileUrl())
-                                                                                                                        .mimeType(stored.mimeType())
-                                                                                                                        .fileSize(stored.fileSize())
-                                                                                                                        .createdAt(LocalDateTime
-                                                                                                                                        .now())
-                                                                                                                        .build();
+                                                                                        ObjectNode payload = om
+                                                                                                        .createObjectNode();
+                                                                                        payload.put("inputUri",
+                                                                                                        stored.gsUri());
+                                                                                        // [New] 베이스 이미지 추가
+                                                                                        payload.put("baseImageUri",
+                                                                                                        project.getUserImgGcsUrl());
 
-                                                                                                        return contentAssetRepository
-                                                                                                                        .save(asset)
-                                                                                                                        .thenReturn(savedContent);
-                                                                                                })
-                                                                                                .flatMap(savedContent ->
-                                                                // [Fix] Direct Publish 제거 -> Standard Outbox Pattern 복귀
-                                                                // (Debezium 의존)
-                                                                jobService.requestJob(projectId, jobReq, null)
-                                                                                .map(jobId -> new com.example.chillgram.domain.product.dto.PackageMockupResponse(
-                                                                                                jobId,
-                                                                                                savedContent.getId(),
-                                                                                                stored.fileUrl()))))
-                                                                                // 3. 보상(Compensation): DB 트랜잭션 실패 시 GCS
-                                                                                // 업로드 취소
-                                                                                .onErrorResume(err -> {
-                                                                                        log.error("Failed to request package mockup job. Compensating by deleting GCS object: {}",
-                                                                                                        stored.gsUri(),
-                                                                                                        err);
-                                                                                        return gcs.delete(
-                                                                                                        stored.gsUri())
-                                                                                                        .onErrorResume(delErr -> {
-                                                                                                                log.warn("Failed to clean up GCS object after transaction failure: {}",
+                                                                                        CreateJobRequest jobReq = new CreateJobRequest(
+                                                                                                        JobType.DIELINE,
+                                                                                                        payload);
+
+                                                                                        // 3. DB 트랜잭션 (BASIC과 동일 방식:
+                                                                                        // requestJob → Outbox →
+                                                                                        // Debezium)
+                                                                                        return tx.transactional(
+                                                                                                        contentRepo.save(
+                                                                                                                        content)
+                                                                                                                        .flatMap(savedContent -> {
+                                                                                                                                payload.put("contentId",
+                                                                                                                                                savedContent.getId());
+                                                                                                                                var asset = com.example.chillgram.domain.content.entity.ContentAsset
+                                                                                                                                                .builder()
+                                                                                                                                                .contentId(savedContent
+                                                                                                                                                                .getId())
+                                                                                                                                                .assetType("MOCKUP")
+                                                                                                                                                .fileUrl(stored.fileUrl())
+                                                                                                                                                .mimeType(stored.mimeType())
+                                                                                                                                                .fileSize(stored.fileSize())
+                                                                                                                                                .createdAt(LocalDateTime
+                                                                                                                                                                .now())
+                                                                                                                                                .build();
+
+                                                                                                                                return contentAssetRepository
+                                                                                                                                                .save(asset)
+                                                                                                                                                .thenReturn(savedContent);
+                                                                                                                        })
+                                                                                                                        .flatMap(savedContent ->
+                                                                                        // [Fix] Direct Publish 제거 ->
+                                                                                        // Standard Outbox Pattern 복귀
+                                                                                        // (Debezium 의존)
+                                                                                        jobService.requestJob(
+                                                                                                        projectId,
+                                                                                                        jobReq,
+                                                                                                        null)
+                                                                                                        .map(jobId -> new com.example.chillgram.domain.product.dto.PackageMockupResponse(
+                                                                                                                        jobId,
+                                                                                                                        savedContent.getId(),
+                                                                                                                        stored.fileUrl()))))
+                                                                                                        // 4.
+                                                                                                        // 보상(Compensation):
+                                                                                                        // DB 트랜잭션 실패 시
+                                                                                                        // GCS 업로드 취소
+                                                                                                        .onErrorResume(err -> {
+                                                                                                                log.error("Failed to request package mockup job. Compensating by deleting GCS object: {}",
                                                                                                                                 stored.gsUri(),
-                                                                                                                                delErr);
-                                                                                                                return Mono.empty(); // 삭제
-                                                                                                                                     // 실패는
-                                                                                                                                     // 로그만
-                                                                                                                                     // 남기고
-                                                                                                                                     // 원래
-                                                                                                                                     // 에러를
-                                                                                                                                     // 던짐
-                                                                                                        })
-                                                                                                        .then(Mono.error(
-                                                                                                                        err));
+                                                                                                                                err);
+                                                                                                                return gcs
+                                                                                                                                .delete(stored.gsUri())
+                                                                                                                                .onErrorResume(delErr -> {
+                                                                                                                                        log.warn("Failed to clean up GCS object after transaction failure: {}",
+                                                                                                                                                        stored.gsUri(),
+                                                                                                                                                        delErr);
+                                                                                                                                        return Mono.empty(); // 삭제
+                                                                                                                                                             // 실패는
+                                                                                                                                                             // 로그만
+                                                                                                                                                             // 남기고
+                                                                                                                                                             // 원래
+                                                                                                                                                             // 에러를
+                                                                                                                                                             // 던짐
+                                                                                                                                })
+                                                                                                                                .then(Mono.error(
+                                                                                                                                                err));
+                                                                                                        });
                                                                                 });
                                                         });
-                                })
-                                .doOnSuccess(jid -> log.info("Package mockup job requested: jobId={}, productId={}",
-                                                jid, productId));
+                                });
         }
 }
