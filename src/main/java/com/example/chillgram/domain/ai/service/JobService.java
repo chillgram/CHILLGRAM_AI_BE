@@ -10,15 +10,18 @@ import com.example.chillgram.domain.ai.repository.JobTaskRepository;
 import com.example.chillgram.domain.ai.repository.OutboxEventRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Mono;
 
+import lombok.extern.slf4j.Slf4j;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Service
+@Slf4j
 public class JobService {
 
     private final JobTaskRepository jobRepo;
@@ -26,6 +29,8 @@ public class JobService {
     private final TransactionalOperator tx;
     private final ObjectMapper om;
     private final String jobsRoutingKey;
+    private final com.example.chillgram.domain.content.service.ContentService contentService;
+    private final org.springframework.amqp.core.AmqpTemplate amqpTemplate;
 
     // ✅ gs:// -> https:// 변환용 (GcsFileStorage와 동일한 개념)
     private final String gcsBucket;
@@ -37,14 +42,17 @@ public class JobService {
             TransactionalOperator tx,
             ObjectMapper om,
             @Value("${app.jobs.routing-key}") String jobsRoutingKey,
+            com.example.chillgram.domain.content.service.ContentService contentService,
+            org.springframework.amqp.core.AmqpTemplate amqpTemplate,
             @Value("${gcs.bucket}") String gcsBucket,
-            @Value("${gcs.publicBaseUrl}") String gcsPublicBaseUrl
-    ) {
+            @Value("${gcs.publicBaseUrl}") String gcsPublicBaseUrl) {
         this.jobRepo = jobRepo;
         this.outboxRepo = outboxRepo;
         this.tx = tx;
         this.om = om;
         this.jobsRoutingKey = jobsRoutingKey;
+        this.contentService = contentService;
+        this.amqpTemplate = amqpTemplate;
         this.gcsBucket = gcsBucket;
         this.gcsPublicBaseUrl = stripTrailingSlash(gcsPublicBaseUrl);
     }
@@ -71,10 +79,49 @@ public class JobService {
                                 "JOB_REQUESTED",
                                 jobsRoutingKey,
                                 eventPayload,
-                                now
-                        ))
-                        .thenReturn(jobId)
-        );
+                                now))
+                        .thenReturn(jobId));
+    }
+
+    /**
+     * Low-level insert without creating a transaction. Caller may wrap this in a
+     * transaction.
+     */
+    public Mono<Void> insertJobTaskAndOutbox(UUID jobId, long projectId, CreateJobRequest req, String traceId) {
+        UUID outboxId = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.now();
+
+        ObjectNode eventPayload = om.createObjectNode();
+        eventPayload.put("jobId", jobId.toString());
+        eventPayload.put("projectId", projectId);
+        eventPayload.put("jobType", req.jobType().name());
+        eventPayload.set("payload", req.payload());
+        eventPayload.put("requestedAt", now.toString());
+        eventPayload.put("traceId", traceId == null ? "" : traceId);
+
+        // [Fix] Debezium이 없으므로 직접 RabbitMQ 발행 (Outbox는 이력 및 재발행용으로 유지)
+        return jobRepo.insertRequested(jobId, projectId, req.jobType(), req.payload(), now)
+                .then(outboxRepo.insertOutbox(
+                        outboxId,
+                        "JOB",
+                        jobId,
+                        "JOB_REQUESTED",
+                        jobsRoutingKey,
+                        eventPayload,
+                        now))
+                .then(Mono.fromRunnable(() -> {
+                    try {
+                        // [Direct Publishing]
+                        // [Fix] ObjectNode는 직렬화되지 않으므로 String으로 변환하여 전송
+                        amqpTemplate.convertAndSend(jobsRoutingKey, eventPayload.toString());
+                        log.info("Published job request to RabbitMQ: jobId={}, routingKey={}", jobId, jobsRoutingKey);
+                    } catch (Exception e) {
+                        log.error("Failed to publish job request to RabbitMQ: jobId={}", jobId, e);
+                        // 여기서 에러를 던지면 전체 트랜잭션이 롤백될 수 있음 (ProductService 구조상)
+                        // 하지만 비동기 메시징 실패는 치명적이므로 에러를 전파하는 것이 맞음
+                        throw new RuntimeException("Failed to publish job request", e);
+                    }
+                }));
     }
 
     public Mono<JobResponse> getJob(UUID jobId) {
@@ -98,17 +145,50 @@ public class JobService {
 
                     if (req.success()) {
                         if (req.outputUri() == null || req.outputUri().isBlank()) {
-                            return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "outputUri is required when success=true"));
+                            return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED,
+                                    "outputUri is required when success=true"));
                         }
 
                         // ✅ gs://면 https로 변환해서 저장
                         String normalized = normalizeOutputUri(req.outputUri());
 
-                        return jobRepo.markSucceeded(jobId, normalized, now).then();
+                        // [P0 Fix] DIELINE 작업 성공 시 Content 업데이트
+                        Mono<Void> sideEffect = Mono.empty();
+                        if (existing
+                                .jobType() == com.example.chillgram.domain.advertising.dto.jobs.JobEnums.JobType.DIELINE) {
+                            JsonNode pl = existing.payload();
+                            if (pl != null && pl.has("contentId")) {
+                                long contentId = pl.get("contentId").asLong();
+                                // [Refactor] ContentService 호출 (순환 참조 방지 및 역할 분리)
+                                sideEffect = contentService.updateMockupResult(contentId, normalized).then();
+                            } else {
+                                // [Refactor] contentId 누락 시 경고 로그 (Legacy Job 등)
+                                log.warn("DIELINE job completed but no contentId in payload. jobId={}", jobId);
+                            }
+                        }
+
+                        // [Refactor] 트랜잭션 보장 & 실행 순서 변경 (SideEffect -> MarkSucceeded)
+                        return tx.transactional(
+                                sideEffect.then(jobRepo.markSucceeded(jobId, normalized, now))).then();
+
                     } else {
-                        String ec = (req.errorCode() == null || req.errorCode().isBlank()) ? "WORKER_FAILED" : req.errorCode();
+                        String ec = (req.errorCode() == null || req.errorCode().isBlank()) ? "WORKER_FAILED"
+                                : req.errorCode();
                         String em = (req.errorMessage() == null) ? "" : req.errorMessage();
-                        return jobRepo.markFailed(jobId, ec, em, now).then();
+
+                        // [Fix] Job 실패 시 Content도 FAILED로 변경
+                        Mono<Void> failSideEffect = Mono.empty();
+                        if (existing
+                                .jobType() == com.example.chillgram.domain.advertising.dto.jobs.JobEnums.JobType.DIELINE) {
+                            JsonNode pl = existing.payload();
+                            if (pl != null && pl.has("contentId")) {
+                                long contentId = pl.get("contentId").asLong();
+                                failSideEffect = contentService.updateMockupFailed(contentId).then();
+                            }
+                        }
+
+                        return tx.transactional(
+                                failSideEffect.then(jobRepo.markFailed(jobId, ec, em, now).then())).then();
                     }
                 });
     }
@@ -117,13 +197,15 @@ public class JobService {
         String u = outputUri.trim();
 
         // 이미 https면 그대로
-        if (u.startsWith("http://") || u.startsWith("https://")) return u;
+        if (u.startsWith("http://") || u.startsWith("https://"))
+            return u;
 
         // gs://bucket/object -> publicBaseUrl/object 로 변환
         if (u.startsWith("gs://")) {
             String noScheme = u.substring("gs://".length());
             int slash = noScheme.indexOf('/');
-            if (slash < 0) return u; // 이상한 값이면 그냥 저장(= 디버깅 목적)
+            if (slash < 0)
+                return u; // 이상한 값이면 그냥 저장(= 디버깅 목적)
 
             String bucket = noScheme.substring(0, slash);
             String object = noScheme.substring(slash + 1);
@@ -140,7 +222,8 @@ public class JobService {
     }
 
     private static String stripTrailingSlash(String s) {
-        if (s == null) return "";
+        if (s == null)
+            return "";
         return s.endsWith("/") ? s.substring(0, s.length() - 1) : s;
     }
 }

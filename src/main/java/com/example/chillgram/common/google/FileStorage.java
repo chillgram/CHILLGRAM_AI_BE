@@ -24,4 +24,11 @@ public interface FileStorage {
             String gsUri,
             Long fileSize) {
     }
+
+    /**
+     * Delete object identified by gs://bucket/path
+     *
+     * @param gsUri gs://... uri
+     */
+    Mono<Void> delete(String gsUri);
 }

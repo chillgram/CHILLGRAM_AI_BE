@@ -78,6 +78,9 @@ public class Content {
     @Column("gcs_img_url")
     private String gcsImgUrl;
 
+    @Column("mockup_img_url")
+    private String mockupImgUrl;
+
     public void update(String title, String body, String status, String tags, String platform) {
         if (title != null)
             this.title = title;
@@ -89,6 +92,17 @@ public class Content {
             this.tags = tags;
         if (platform != null)
             this.platform = platform;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public void updateMockup(String generatedImgUrl) {
+        this.gcsImgUrl = generatedImgUrl; // [Fix] 생성된 목업을 gcs_img_url에 저장 (사용자 요구사항)
+        this.status = "COMPLETED";
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public void updateMockupFailed() {
+        this.status = "FAILED";
         this.updatedAt = LocalDateTime.now();
     }
 }

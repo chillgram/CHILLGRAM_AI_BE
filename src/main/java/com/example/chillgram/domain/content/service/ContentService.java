@@ -68,6 +68,34 @@ public class ContentService {
     }
 
     // ============================
+    // Mockup 업데이트 (from JobService)
+    // ============================
+
+    @org.springframework.transaction.annotation.Transactional
+    public Mono<Content> updateMockupResult(Long contentId, String mockupImgUrl) {
+        return contentRepository.findById(contentId)
+                // [Fix] Content 미발견 시 에러 무시하지 않고 로그 남김
+                .switchIfEmpty(Mono.defer(() -> {
+                    // 로그는 Slf4j가 없으므로 System.out 또는 추후 @Slf4j 추가 필요. 여기서는 에러 전파.
+                    return Mono.error(
+                            ApiException.of(ErrorCode.NOT_FOUND, "Content not found for mockup result: " + contentId));
+                }))
+                .flatMap(content -> {
+                    content.updateMockup(mockupImgUrl);
+                    return contentRepository.save(content);
+                });
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public Mono<Content> updateMockupFailed(Long contentId) {
+        return contentRepository.findById(contentId)
+                .flatMap(content -> {
+                    content.updateMockupFailed(); // Content 엔티티에 메서드 추가 필요
+                    return contentRepository.save(content);
+                });
+    }
+
+    // ============================
     // ContentAsset 조회
     // ============================
 

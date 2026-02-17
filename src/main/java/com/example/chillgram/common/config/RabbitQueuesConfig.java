@@ -13,4 +13,10 @@ public class RabbitQueuesConfig {
     public Queue jobResultsQueue(@Value("${app.jobs.result-queue}") String q) {
         return QueueBuilder.durable(q).build();
     }
+
+    // [Fix] Worker로 보내는 큐도 선언 필요 (Default Exchange 사용 시 필수)
+    @Bean
+    public Queue jobsQueue(@Value("${app.jobs.routing-key}") String q) {
+        return QueueBuilder.durable(q).build();
+    }
 }

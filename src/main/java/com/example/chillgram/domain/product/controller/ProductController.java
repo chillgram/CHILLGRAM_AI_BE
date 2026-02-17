@@ -21,6 +21,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.codec.multipart.FilePart;
+import java.util.UUID;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -93,6 +95,22 @@ public class ProductController {
     public Mono<List<ProjectResponse>> getProjectsByProduct(
             @Parameter(description = "제품 ID", required = true) @PathVariable Long id) {
         return projectService.getProjectsByProduct(id);
+    }
+
+    @PostMapping("/{id}/add_package")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @Operation(summary = "도면업로드", description = "도면 이미지를 업로드하고 목업 생성 작업을 요청합니다.")
+    public Mono<com.example.chillgram.domain.product.dto.PackageMockupResponse> addPackage(
+            @Parameter(description = "제품 ID", required = true) @PathVariable Long id,
+            @Parameter(description = "프로젝트 ID", required = true) @RequestParam Long projectId,
+            @RequestPart("file") FilePart file,
+            @AuthenticationPrincipal AuthPrincipal principal) {
+
+        if (principal == null) {
+            throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보가 없습니다.");
+        }
+
+        return productService.addPackageMockup(id, projectId, file, principal);
     }
 
 }
