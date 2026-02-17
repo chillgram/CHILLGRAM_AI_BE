@@ -70,8 +70,14 @@ public class AdHandler {
     public Mono<ServerResponse> createAdCopies(ServerRequest req) {
         long productId = Long.parseLong(req.pathVariable("id"));
 
-        return req.bodyToMono(AdCopiesRequest.class)
-                .flatMap(body -> adService.createAdCopies(productId, body))
+        return req.bodyToMono(com.example.chillgram.domain.ai.dto.FinalCopyRequest.class)
+                .flatMap(body -> {
+                    if (body.selectedGuideline() == null || body.selectedGuideline().isEmpty()) {
+                        return Mono
+                                .error(ApiException.of(ErrorCode.VALIDATION_FAILED, "selectedGuideline is required"));
+                    }
+                    return adService.createAdCopies(productId, body);
+                })
                 .flatMap(resp -> ServerResponse.ok().bodyValue(resp));
     }
 
@@ -120,8 +126,25 @@ public class AdHandler {
                     }
 
                     return fileStorage.store(f)
-                            .flatMap(stored -> adService.createProjectAndContents(productId, body, stored, userId))
                             .flatMap(res -> ServerResponse.ok().bodyValue(res));
                 }));
+    }
+
+    public Mono<ServerResponse> createAdLog(ServerRequest req) {
+        long productId = Long.parseLong(req.pathVariable("id"));
+
+        return req.principal()
+                .map(principal -> {
+                    if (principal instanceof org.springframework.security.authentication.UsernamePasswordAuthenticationToken auth) {
+                        return ((AuthPrincipal) auth.getPrincipal()).userId();
+                    }
+                    throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보를 확인할 수 없습니다.");
+                })
+                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "로그인이 필요합니다.")))
+                .flatMap(userId -> req.bodyToMono(com.example.chillgram.domain.advertising.dto.AdGenLogRequest.class)
+                        .flatMap(body -> adService.saveAdGenerationLog(productId, body, userId))
+                        .flatMap(logId -> ServerResponse.ok()
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .bodyValue(java.util.Map.of("success", true, "logId", logId))));
     }
 }

@@ -11,6 +11,7 @@ import org.springframework.web.reactive.function.server.ServerResponse;
 
 import static org.springframework.web.reactive.function.server.RequestPredicates.POST;
 import static org.springframework.web.reactive.function.server.RouterFunctions.route;
+
 @Configuration
 public class AdRouter {
 
@@ -32,7 +33,7 @@ public class AdRouter {
                         .route(POST("/{id}/ad-guides"), adHandler::createAdGuides)
                         .route(POST("/{id}/ad-copies"), adHandler::createAdCopies)
                         .route(POST("/{id}/ads"), adHandler::createAdProjectAndContents)
-                )
+                        .route(POST("/{id}/log"), adHandler::createAdLog))
                 .build();
     }
 }

@@ -19,6 +19,9 @@ public record AdGuideAiRequest(
         String requestText,
         List<String> selectedKeywords,
         String adFocus,
+        int adMessageFocus,        // 0: 트렌드 중심 ~ 4: 제품 특징(리뷰) 중심
+        int adMessageTarget,       // 0: 인지, 1: 공감, 2: 보상, 3: 참여, 4: 행동
+        String reviewText,         // 제품 리뷰 요약 (3줄)
         List<String> trendKeywords,
         List<String> hashtags,
         String styleSummary,
@@ -35,7 +38,11 @@ public record AdGuideAiRequest(
         adGoal = safe(adGoal);
         requestText = safe(requestText);
         adFocus = safe(adFocus);
+        reviewText = safe(reviewText);
         styleSummary = safe(styleSummary);
+
+        adMessageFocus = Math.clamp(adMessageFocus, 0, 4);
+        adMessageTarget = Math.clamp(adMessageTarget, 0, 4);
 
         selectedKeywords = safeList(selectedKeywords);
         trendKeywords = safeList(trendKeywords);
@@ -75,6 +82,9 @@ public record AdGuideAiRequest(
                 req != null ? req.requestText() : null,
                 req != null ? req.selectedKeywords() : null,
                 req != null ? req.adFocus() : null,
+                req != null && req.adMessageFocus() != null ? req.adMessageFocus() : 2,
+                req != null && req.adMessageTarget() != null ? req.adMessageTarget() : 0,
+                req != null ? req.reviewText() : null,
                 trendKeywordNames,
                 trends != null ? trends.hashtags() : null,
                 trends != null ? trends.styleSummary() : null,

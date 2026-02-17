@@ -1,12 +1,11 @@
 package com.example.chillgram.domain.ai.service;
 
 import com.example.chillgram.domain.ai.dto.AdGuideAiRequest;
-import com.example.chillgram.domain.ai.dto.AdGuideAiResponse;
+import com.example.chillgram.domain.advertising.dto.AdGuidesResponse;
 import com.example.chillgram.domain.ai.dto.FinalCopyRequest;
 import com.example.chillgram.domain.ai.dto.FinalCopyResponse;
 import com.example.chillgram.domain.ai.dto.GuidelineRequest;
 import com.example.chillgram.domain.ai.dto.GuidelineResponse;
-import com.example.chillgram.domain.ai.dto.VisualGuideOption;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.ObjectProvider;
@@ -15,21 +14,25 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Gemini 기반 광고 가이드라인 및 최종 카피 생성 서비스
+ * Gemini 기반 광고 가이드라인 및 최종 카피 생성 서비스 (2-Step Flow)
  */
 @Slf4j
 @Service
 public class AdCopyService {
 
     private final ChatClient chatClient;
+    private final ObjectMapper objectMapper;
 
-    public AdCopyService(ObjectProvider<ChatClient> chatClientProvider) {
+    public AdCopyService(ObjectProvider<ChatClient> chatClientProvider, ObjectMapper objectMapper) {
         this.chatClient = chatClientProvider.getIfAvailable();
+        this.objectMapper = objectMapper;
     }
 
     private void checkAiEnabled() {
@@ -40,67 +43,45 @@ public class AdCopyService {
     }
 
     // =========================================================
-    // 신규: 광고 가이드라인 생성 (ad-guides 전용)
+    // 1단계: 광고 가이드라인 5개 생성 (ad-guides)
     // =========================================================
 
-    /**
-     * WebFlux에서 안전하게 쓰기 위한 Reactive 래퍼
-     * - ChatClient 호출이 블로킹될 수 있으므로 boundedElastic로 분리
-     */
-    public Mono<AdGuideAiResponse> generateAdGuidesMono(AdGuideAiRequest request) {
+    public Mono<AdGuidesResponse> generateAdGuidesMono(AdGuideAiRequest request) {
         return Mono.fromCallable(() -> generateAdGuides(request))
                 .subscribeOn(Schedulers.boundedElastic());
     }
 
-    /**
-     * 광고 가이드라인 생성(동기)
-     * - GUIDE_START/END 포맷 강제
-     * - 섹션/내용 파싱하여 구조화 반환
-     */
-    public AdGuideAiResponse generateAdGuides(AdGuideAiRequest request) {
+    public AdGuidesResponse generateAdGuides(AdGuideAiRequest request) {
         checkAiEnabled();
+
+        String focusInstruction = buildFocusInstruction(
+                request.adMessageFocus(),
+                String.join(", ", request.trendKeywords()),
+                request.reviewText());
+        String targetInstruction = buildTargetInstruction(request.adMessageTarget());
 
         String prompt = """
                 당신은 한국 시장의 퍼포먼스 마케터이자 카피라이터입니다.
                 아래 입력을 바탕으로 '광고 가이드라인'을 작성하세요.
-                모든 내용은 반드시 한국어로 작성해야 합니다.
-                반드시 지정된 포맷을 지키고, 설명이나 생각 과정 등 부가적인 텍스트는 출력하지 마세요.
+                반드시 지정된 포맷을 지키세요. 포맷을 어기면 실패로 간주됩니다.
 
                 [GUIDE_START]
-                섹션: 핵심 메시지
-                내용: (1문장 + 서브 메시지 3개)
-                섹션: 타깃/상황
-                내용: (2~3줄)
-                섹션: 톤&매너(Do/Don't)
-                내용: (Do 3개 / Don't 3개)
-                섹션: 금지표현/리스크 체크
-                내용: (체크리스트 형태)
-                섹션: 플랫폼별 변형(인스타/배너/쇼츠)
-                내용: (각 3줄씩)
-                섹션: A/B 테스트 아이디어(가설 포함)
-                내용: (5개)
+                ID: (고유 ID)
+                Title: (직관적인 가이드라인 제목, 예: 제품 중심 홍보)
+                Summary: (핵심 전략 요약)
+                Badge: (유형 배지, 예: 전환형, 브랜딩형)
+                Score: (추천 점수 0-100)
+                Rationale: (점수 산정 근거 또는 추천 이유)
+                KeyPoints:
+                - Tone: (톤앤매너 키워드 1)
+                - Structure: (구조적 특징)
+                - CTA: (행동 유도 전략)
                 [GUIDE_END]
 
-                [입력]
-                - productId: %d
-                - 상품명: %s
-                - baseDate: %s
-                - 프로젝트 제목: %s
-                - 광고 목표: %s
-                - 요청문: %s
-                - 선택 키워드: %s
-                - 광고 초점: %s
-
-                [트렌드]
-                - 트렌드 키워드: %s
-                - 해시태그: %s
-                - 스타일 요약: %s
+                총 5개의 가이드라인을 생성하세요.
                 """.formatted(
-                request.productId(),
                 request.productName(),
-                request.baseDate(),
                 request.projectTitle(),
-                request.adGoal(),
                 request.requestText(),
                 request.selectedKeywords(),
                 request.adFocus(),
@@ -108,15 +89,58 @@ public class AdCopyService {
                 request.hashtags(),
                 request.styleSummary());
 
-        String response = chatClient.prompt()
-                .system("당신은 한국어만 사용하는 AI입니다. 모든 응답을 반드시 한국어로 작성하세요. 영어로 응답하지 마세요.")
-                .user(prompt).call().content();
+        String response = chatClient.prompt().user(prompt).call().content();
         log.info("광고 가이드라인 생성 응답: {}", response);
 
-        return parseGuideSections(response);
+        return parseAdGuidesResponse(response);
     }
 
-    private AdGuideAiResponse parseGuideSections(String response) {
+    // ── focus(0~4)에 따라 트렌드 vs 리뷰 가중치 조절 ──
+
+    private String buildFocusInstruction(int focus, String trendKeywords, String reviewText) {
+        boolean hasTrend = !trendKeywords.isBlank();
+        boolean hasReview = !reviewText.isBlank();
+
+        return switch (focus) {
+            case 0 -> hasTrend
+                    ? "【메시지 초점: 트렌드 중심】\n아래 트렌드 키워드를 핵심 축으로 활용하세요: " + trendKeywords
+                            + (hasReview ? "\n(참고) 소비자 리뷰: " + reviewText : "")
+                    : "【메시지 초점: 트렌드 중심】\n최신 시장 트렌드를 반영한 가이드라인을 작성하세요.";
+            case 1 -> "【메시지 초점: 트렌드 우선】\n트렌드 키워드를 중심으로 하되, 소비자 리뷰도 적극 반영하세요."
+                    + (hasTrend ? "\n트렌드: " + trendKeywords : "")
+                    + (hasReview ? "\n리뷰: " + reviewText : "");
+            case 2 -> "【메시지 초점: 균형】\n트렌드 키워드와 제품 리뷰를 균형 있게 반영하세요."
+                    + (hasTrend ? "\n트렌드: " + trendKeywords : "")
+                    + (hasReview ? "\n리뷰: " + reviewText : "");
+            case 3 -> "【메시지 초점: 제품 우선】\n소비자 리뷰의 실제 언어를 중심으로 하되, 트렌드도 참고하세요."
+                    + (hasReview ? "\n리뷰: " + reviewText : "")
+                    + (hasTrend ? "\n트렌드: " + trendKeywords : "");
+            case 4 -> hasReview
+                    ? "【메시지 초점: 제품 특징 중심】\n아래 실제 소비자 리뷰를 핵심 축으로 활용하세요: " + reviewText
+                            + (hasTrend ? "\n(참고) 트렌드: " + trendKeywords : "")
+                    : "【메시지 초점: 제품 특징 중심】\n제품의 핵심 특징과 장점을 중심으로 가이드라인을 작성하세요."
+                            + (hasTrend ? "\n(참고) 트렌드: " + trendKeywords : "");
+            default -> "트렌드와 제품 특징을 균형 있게 반영하세요."
+                    + (hasTrend ? "\n트렌드: " + trendKeywords : "")
+                    + (hasReview ? "\n리뷰: " + reviewText : "");
+        };
+    }
+
+    // ── target(0~4)에 따라 광고 목표 톤 지정 ──
+
+    private String buildTargetInstruction(int target) {
+        return switch (target) {
+            case 0 -> "【광고 목표: 인지】\n'이런 제품이 있다'는 것을 알리는 데 집중하세요. 브랜드/제품 인지도를 높이는 메시지를 만드세요.";
+            case 1 -> "【광고 목표: 공감】\n소비자의 감정과 일상 상황에 공명하는 메시지를 만드세요. 공감을 이끌어내는 스토리텔링을 활용하세요.";
+            case 2 -> "【광고 목표: 보상】\n혜택, 할인, 특별 제안을 강조하세요. 소비자가 얻을 수 있는 구체적인 보상을 부각하세요.";
+            case 3 -> "【광고 목표: 참여】\n이벤트, 챌린지, 댓글 유도 등 소비자 참여를 이끄는 메시지를 만드세요. 인터랙션을 유도하세요.";
+            case 4 -> "【광고 목표: 행동】\n즉시 구매/클릭을 유도하는 강한 CTA를 포함하세요. '지금 바로', '한정 수량' 등 긴급성을 활용하세요.";
+            default -> "【광고 목표: 인지】\n브랜드와 제품을 알리는 데 집중하세요.";
+        };
+    }
+
+    private AdGuidesResponse parseAdGuidesResponse(String response) {
+        List<AdGuidesResponse.GuidelineOption> guides = new ArrayList<>();
         String clean = (response == null ? "" : response).replaceAll("\\*\\*", "");
         String body = clean;
 
@@ -145,10 +169,10 @@ public class AdCopyService {
     }
 
     // =========================================================
-    // 기존: 1단계 키워드 기반 가이드라인 5개 생성
+    // 2단계: 최종 카피 5개 생성 (ad-copies)
     // =========================================================
 
-    public GuidelineResponse generateGuidelines(GuidelineRequest request) {
+    public FinalCopyResponse generateFinalCopies(FinalCopyRequest request) {
         checkAiEnabled();
 
         String prompt = """
@@ -163,12 +187,10 @@ public class AdCopyService {
                 톤: (친근한, 전문적인, 유머러스한 등)
                 [가이드라인 끝]
 
-                총 5개를 작성하세요. 모든 내용은 반드시 한국어로 작성하세요.
+                총 5개를 작성하세요.
                 """.formatted(request.keyword(), request.productName());
 
-        String response = chatClient.prompt()
-                .system("당신은 한국어만 사용하는 AI입니다. 모든 응답을 반드시 한국어로 작성하세요. 영어로 응답하지 마세요.")
-                .user(prompt).call().content();
+        String response = chatClient.prompt().user(prompt).call().content();
         log.info("가이드라인 생성 응답: {}", response);
 
         List<GuidelineResponse.Guideline> guidelines = parseGuidelines(response);
@@ -183,35 +205,27 @@ public class AdCopyService {
         checkAiEnabled();
 
         String prompt = """
-                당신은 전문 카피라이터이자 AI 이미지/비디오 프롬프트 엔지니어입니다.
+                당신은 전문 카피라이터입니다.
+                다음 선택된 가이드라인을 바탕으로 5개의 광고 카피를 작성하세요.
 
-                상품명: %s
-                키워드: %s
-                선택된 컨셉: %s
-                컨셉 설명: %s
-                전체적인 톤: %s
+                [선택된 가이드라인]
+                %s
 
-                위 정보를 바탕으로 다음 항목들을 생성하세요.
-                각 항목은 반드시 지정된 구분자 사이에 내용을 작성하세요.
+                [출력 형식]
+                [COPY_START]
+                Title: (카피 제목/컨셉명)
+                Body: (광고 본문 카피, 줄바꿈 포함 가능)
+                [COPY_END]
 
-                [COPY] (15자 이내의 임팩트 있는 문구) [/COPY]
-                [SHORTFORM] (영상 묘사 프롬프트, 영어로 작성) [/SHORTFORM]
-                [BANNER] (이미지 묘사 프롬프트, 영어로 작성) [/BANNER]
-                [SNS] (이모지가 포함된 인스타그램 스타일 문구 및 해시태그) [/SNS]
-                [REASON] (이 가이드라인이 현재 트렌드와 제품을 연결하는 데 있어 왜 가장 효과적인지, 그리고 마케팅적으로 어떤 강점이 있는지에 대한 전략적 분석) [/REASON]
-                """.formatted(
-                request.productName(),
-                request.keyword(),
-                request.selectedConcept(),
-                request.selectedDescription(),
-                request.tone());
+                총 5개의 카피를 생성하세요.
+                """.formatted(guideInfo);
 
         String response = chatClient.prompt()
                 .system("당신은 한국어만 사용하는 AI입니다. SHORTFORM과 BANNER 프롬프트를 제외한 모든 응답을 한국어로 작성하세요.")
                 .user(prompt).call().content();
         log.info("최종 카피 생성 응답: {}", response);
 
-        return parseFinalResponse(request.productName(), request.selectedConcept(), response);
+        return parseFinalCopyResponse(response);
     }
 
     private List<GuidelineResponse.Guideline> parseGuidelines(String response) {
@@ -231,7 +245,7 @@ public class AdCopyService {
 
                 guidelines.add(new GuidelineResponse.Guideline(id, concept, description, tone));
             } catch (Exception e) {
-                log.warn("가이드라인 블록 파싱 실패: {}", e.getMessage());
+                log.warn("카피 파싱 중 오류 발생: {}", e.getMessage());
             }
         }
         return guidelines;
@@ -274,9 +288,9 @@ public class AdCopyService {
     }
 
     private String extractValue(String block, String key) {
-        Pattern pattern = Pattern.compile("(?i)" + key + ":?\\s*([^\n]+)");
+        Pattern pattern = Pattern.compile("(?i)" + Pattern.quote(key) + ":?\\s*([^\n]+)");
         Matcher matcher = pattern.matcher(block);
-        return matcher.find() ? matcher.group(1).trim().replaceAll("\\*\\*", "") : "";
+        return matcher.find() ? matcher.group(1).trim() : "";
     }
 
     // =========================================================
@@ -455,7 +469,8 @@ public class AdCopyService {
             String[] lines = clean.split("\n");
             for (String line : lines) {
                 String l = line.replaceAll("^\\d+[.\\)]\\s*", "").replaceAll("^-\\s*", "").trim();
-                if (!l.isBlank() && l.length() > 5 && !l.toLowerCase().startsWith("okay") && !l.toLowerCase().startsWith("my thought"))
+                if (!l.isBlank() && l.length() > 5 && !l.toLowerCase().startsWith("okay")
+                        && !l.toLowerCase().startsWith("my thought"))
                     copies.add(l);
             }
             if (copies.isEmpty()) {

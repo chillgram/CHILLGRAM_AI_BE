@@ -2,17 +2,18 @@ package com.example.chillgram.domain.advertising.dto;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 public record AdGuidesResponse(
-        long productId,
-        String productName,
-        LocalDate baseDate,
-        String title,
-        String adGoal,
-        String requestText,
-        List<String> selectedKeywords,
-        String adFocus,
-        List<GuideSection> sections
-) {
-    public record GuideSection(String section, String content) {}
+        String recommendedGuideId,
+        List<GuidelineOption> guides) {
+    public record GuidelineOption(
+            String id,
+            String title,
+            String summary,
+            String badge,
+            int score,
+            String rationale,
+            Map<String, Object> key_points) {
+    }
 }

@@ -8,6 +8,7 @@ import com.example.chillgram.domain.advertising.dto.jobs.CreateJobRequest;
 import com.example.chillgram.domain.advertising.dto.jobs.JobEnums;
 import com.example.chillgram.domain.advertising.engine.TrendRuleEngine;
 import com.example.chillgram.domain.advertising.repository.AdCreateRepository;
+import com.example.chillgram.domain.advertising.repository.AdGenLogRepository;
 import com.example.chillgram.domain.advertising.repository.EventCalendarRepository;
 import com.example.chillgram.domain.ai.dto.*;
 import com.example.chillgram.domain.ai.service.AdCopyService;
@@ -15,11 +16,11 @@ import com.example.chillgram.domain.ai.service.JobService;
 import com.example.chillgram.domain.product.entity.Product;
 import com.example.chillgram.domain.product.repository.ProductRepository;
 import com.example.chillgram.domain.project.repository.ProjectRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.reactive.TransactionalOperator;
-import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -40,6 +41,8 @@ public class AdService {
         private final JobService jobService;
         private final ObjectMapper objectMapper;
 
+        private final AdGenLogRepository adGenLogRepository;
+
         public AdService(
                         ProductRepository productRepository,
                         ProjectRepository projectRepository,
@@ -49,7 +52,8 @@ public class AdService {
                         AdCopyService adCopyService,
                         TransactionalOperator tx,
                         JobService jobService,
-                        ObjectMapper objectMapper) {
+                        ObjectMapper objectMapper,
+                        AdGenLogRepository adGenLogRepository) {
                 this.productRepository = productRepository;
                 this.projectRepository = projectRepository;
                 this.eventCalendarRepository = eventCalendarRepository;
@@ -59,6 +63,7 @@ public class AdService {
                 this.tx = tx;
                 this.jobService = jobService;
                 this.objectMapper = objectMapper;
+                this.adGenLogRepository = adGenLogRepository;
         }
 
         private Mono<Product> requireProduct(long productId) {
@@ -111,49 +116,25 @@ public class AdService {
                                         AdGuideAiRequest aiReq = AdGuideAiRequest.from(productId, product, date, req,
                                                         trends);
 
-                                        return adCopyService.generateAdGuidesMono(aiReq)
-                                                        .map(aiResp -> toResponse(productId, product, date, req,
-                                                                        aiResp));
+                                        return adCopyService.generateAdGuidesMono(aiReq);
                                 })
                                 .onErrorMap(ex -> (ex instanceof ApiException) ? ex
                                                 : ApiException.of(ErrorCode.AD_GUIDE_GENERATION_FAILED,
                                                                 ex.getMessage()));
         }
 
-        private AdGuidesResponse toResponse(
-                        long productId,
-                        Product product,
-                        LocalDate date,
-                        AdGuidesRequest req,
-                        AdGuideAiResponse aiResp) {
-                List<AdGuidesResponse.GuideSection> sections = aiResp.sections().stream()
-                                .map(s -> new AdGuidesResponse.GuideSection(s.section(), s.content()))
-                                .toList();
-
-                return new AdGuidesResponse(
-                                productId,
-                                product.getName(),
-                                date,
-                                req.title(),
-                                req.adGoal(),
-                                req.requestText(),
-                                req.selectedKeywords() == null ? List.of() : req.selectedKeywords(),
-                                req.adFocus(),
-                                sections);
-        }
-
-        public Mono<FinalCopyResponse> createAdCopies(long productId, AdCopiesRequest req) {
+        public Mono<FinalCopyResponse> createAdCopies(long productId, FinalCopyRequest req) {
+                if (req.selectedGuideline() == null || req.selectedGuideline().isEmpty()) {
+                        return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED,
+                                        "selectedGuideline is required"));
+                }
                 return productRepository.findById(productId)
                                 .switchIfEmpty(Mono.error(
                                                 ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND,
                                                                 "product not found id=" + productId)))
-                                .flatMap(product -> Mono.fromCallable(() -> adCopyService.generateFinalCopy(
-                                                new FinalCopyRequest(
-                                                                product.getName(),
-                                                                req.keyword(),
-                                                                req.selectedConcept(),
-                                                                req.selectedDescription(),
-                                                                req.tone())))
+                                .flatMap(product -> Mono.fromCallable(() -> {
+                                        return adCopyService.generateFinalCopies(req);
+                                })
                                                 .subscribeOn(Schedulers.boundedElastic()))
                                 .onErrorMap(ex -> (ex instanceof ApiException) ? ex
                                                 : ApiException.of(ErrorCode.AD_COPY_GENERATION_FAILED,
@@ -187,16 +168,6 @@ public class AdService {
                                                                 req, stored, userId)
                                                                 .collectList()
                                                                 .flatMap(contentIds -> {
-
-                                                                        // Step 4, 5 생략 (사용자 요청)
-                                                                        // CreateJobRequest jobReq =
-                                                                        // buildJobPayload(req, projectId, contentIds,
-                                                                        // stored.fileUrl());
-                                                                        // return jobService.requestJob(projectId,
-                                                                        // jobReq, "").map(jobId -> new
-                                                                        // AdCreateResponse(projectId, contentIds,
-                                                                        // jobId));
-
                                                                         return Mono.just(new AdCreateResponse(projectId,
                                                                                         contentIds, null));
                                                                 })))
@@ -210,8 +181,6 @@ public class AdService {
                         AdCreateRequest req,
                         FileStorage.StoredFile stored,
                         long userId) {
-                // 배너 비율 매핑
-                // 1:1 -> 1, 16:9 -> 2, 9:16 -> 3, others -> 0
                 int bannerRatio = 0;
                 if (req.bannerSize() != null) {
                         if (req.bannerSize().contains("1:1"))
@@ -226,7 +195,6 @@ public class AdService {
 
                 return Flux.fromIterable(req.selectedTypes())
                                 .flatMap(type -> {
-                                        // 타입에 따른 분기 처리
                                         String contentType = "IMAGE";
                                         String platform = "INSTAGRAM";
 
@@ -245,7 +213,7 @@ public class AdService {
                                                         contentType,
                                                         platform,
                                                         req.projectTitle(),
-                                                        req.selectedCopy() != null ? req.selectedCopy().finalCopy()
+                                                        req.selectedCopy() != null ? req.selectedCopy().body()
                                                                         : "",
                                                         req.selectedKeywords() != null
                                                                         && !req.selectedKeywords().isEmpty()
@@ -263,22 +231,32 @@ public class AdService {
                                 });
         }
 
-        private CreateJobRequest buildJobPayload(
-                        AdCreateRequest req,
-                        long projectId,
-                        List<Long> contentIds,
-                        String imageUrl) {
-                ObjectNode payload = objectMapper.createObjectNode();
-                payload.put("projectId", projectId);
-                payload.put("imageUrl", imageUrl);
-                payload.put("finalCopy", req.selectedCopy().finalCopy());
+        public Mono<Long> saveAdGenerationLog(long productId, AdGenLogRequest req, long userId) {
+                return productRepository.existsById(productId)
+                                .flatMap(exists -> exists ? Mono.empty()
+                                                : Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND,
+                                                                "product not found")))
+                                .then(adCreateRepository.findCompanyIdByProductId(productId))
+                                .flatMap(companyId -> {
+                                        String finalCopyJson = "{}";
+                                        String guidelineJson = "{}";
+                                        try {
+                                                finalCopyJson = objectMapper.writeValueAsString(req.finalCopy());
+                                                guidelineJson = objectMapper.writeValueAsString(req.guideline());
+                                        } catch (JsonProcessingException e) {
+                                                // Fallback
+                                                finalCopyJson = String.valueOf(req.finalCopy());
+                                                guidelineJson = String.valueOf(req.guideline());
+                                        }
 
-                var arr = payload.putArray("contentIds");
-                contentIds.forEach(arr::add);
-
-                return new CreateJobRequest(
-                                JobEnums.JobType.BANNER,
-                                payload);
+                                        return adGenLogRepository.save(
+                                                        companyId,
+                                                        userId,
+                                                        productId,
+                                                        finalCopyJson,
+                                                        guidelineJson,
+                                                        req.selectionReason());
+                                });
         }
         public Mono<AdGuideResponse> generateAdGuides(Long projectId, AdGuideRequest request, Long companyId) {
                 return projectRepository.findById(projectId)

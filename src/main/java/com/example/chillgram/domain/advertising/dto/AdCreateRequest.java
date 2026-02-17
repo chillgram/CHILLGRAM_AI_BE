@@ -38,7 +38,7 @@ public record AdCreateRequest(
 
         @Schema(description = "선택된 카피 ID", example = "copy_456") String selectedCopyId,
 
-        @Schema(description = "선택된 카피 객체") FinalCopyResponse selectedCopy,
+        @Schema(description = "선택된 카피 객체") FinalCopyResponse.CopyOption selectedCopy,
 
         @Schema(description = "생성할 콘텐츠 타입 목록 (BANNER, SNS, VIDEO, SHORT)", example = "[\"BANNER\", \"SNS\"]") List<String> selectedTypes) {
     public AdCreateRequest {
