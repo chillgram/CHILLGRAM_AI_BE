@@ -19,15 +19,12 @@ public record AdGuideAiRequest(
         String requestText,
         List<String> selectedKeywords,
         String adFocus,
-        int adMessageFocus,        // 0: 트렌드 중심 ~ 4: 제품 특징(리뷰) 중심
-        int adMessageTarget,       // 0: 인지, 1: 공감, 2: 보상, 3: 참여, 4: 행동
-        String reviewText,         // 제품 리뷰 요약 (3줄)
+        Integer adMessageFocus,        // 0: 트렌드 중심 ~ 4: 제품 특징(리뷰) 중심
+        Integer adMessageTarget,       // 0: 인지, 1: 공감, 2: 보상, 3: 참여, 4: 행동
+        String reviewText,             // 제품 리뷰 요약 (3줄)
         List<String> trendKeywords,
         List<String> hashtags,
         String styleSummary,
-        // [New Fields] - Moved to end for compatibility
-        Integer adMessageFocus,
-        Integer adMessageTarget,
         String description,
         String trendString,
         List<String> reviews
@@ -41,8 +38,8 @@ public record AdGuideAiRequest(
         reviewText = safe(reviewText);
         styleSummary = safe(styleSummary);
 
-        adMessageFocus = Math.clamp(adMessageFocus, 0, 4);
-        adMessageTarget = Math.clamp(adMessageTarget, 0, 4);
+        adMessageFocus = adMessageFocus == null ? 2 : Math.clamp(adMessageFocus, 0, 4);
+        adMessageTarget = adMessageTarget == null ? 0 : Math.clamp(adMessageTarget, 0, 4);
 
         selectedKeywords = safeList(selectedKeywords);
         trendKeywords = safeList(trendKeywords);
@@ -50,7 +47,6 @@ public record AdGuideAiRequest(
 
         baseDate = Objects.requireNonNullElseGet(baseDate, LocalDate::now);
 
-        // New fields safe handling
         description = safe(description);
         trendString = safe(trendString);
         reviews = (reviews == null) ? List.of() : reviews;
@@ -77,19 +73,17 @@ public record AdGuideAiRequest(
                 product != null ? product.getName() : null,
                 date,
                 req != null ? req.title() : null,
-                // Existing fields first
                 req != null ? req.adGoal() : null,
                 req != null ? req.requestText() : null,
                 req != null ? req.selectedKeywords() : null,
                 req != null ? req.adFocus() : null,
-                req != null && req.adMessageFocus() != null ? req.adMessageFocus() : 2,
-                req != null && req.adMessageTarget() != null ? req.adMessageTarget() : 0,
+                req != null ? req.adMessageFocus() : null,
+                req != null ? req.adMessageTarget() : null,
                 req != null ? req.reviewText() : null,
                 trendKeywordNames,
                 trends != null ? trends.hashtags() : null,
                 trends != null ? trends.styleSummary() : null,
-                // New fields at end (null for legacy flow)
-                null, null, null, null, null
+                null, null, null
         );
     }
 
@@ -103,11 +97,11 @@ public record AdGuideAiRequest(
                 product.getName(),
                 LocalDate.now(),
                 project.getTitle(),
-                // Existing fields (null for new flow)
-                null, null, null, null, null, null, null,
-                // New fields
+                null, null, null, null,
                 project.getAdMessageFocus(),
                 project.getAdMessageTarget(),
+                null,
+                null, null, null,
                 project.getDescription(),
                 req.trend(),
                 req.reviews()

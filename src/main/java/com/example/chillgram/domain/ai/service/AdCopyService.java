@@ -6,6 +6,8 @@ import com.example.chillgram.domain.ai.dto.FinalCopyRequest;
 import com.example.chillgram.domain.ai.dto.FinalCopyResponse;
 import com.example.chillgram.domain.ai.dto.GuidelineRequest;
 import com.example.chillgram.domain.ai.dto.GuidelineResponse;
+import com.example.chillgram.domain.ai.dto.VisualGuideOption;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.ObjectProvider;
@@ -65,6 +67,20 @@ public class AdCopyService {
                 아래 입력을 바탕으로 '광고 가이드라인'을 작성하세요.
                 반드시 지정된 포맷을 지키세요. 포맷을 어기면 실패로 간주됩니다.
 
+                [입력 정보]
+                - 제품명: %s
+                - 프로젝트 제목: %s
+                - 요청 사항: %s
+                - 선택 키워드: %s
+                - 트렌드 키워드: %s
+                - 해시태그: %s
+                - 스타일 요약: %s
+
+                %s
+
+                %s
+
+                [출력 형식]
                 [GUIDE_START]
                 ID: (고유 ID)
                 Title: (직관적인 가이드라인 제목, 예: 제품 중심 홍보)
@@ -73,7 +89,7 @@ public class AdCopyService {
                 Score: (추천 점수 0-100)
                 Rationale: (점수 산정 근거 또는 추천 이유)
                 KeyPoints:
-                - Tone: (톤앤매너 키워드 1)
+                - Tone: (톤앤매너 키워드)
                 - Structure: (구조적 특징)
                 - CTA: (행동 유도 전략)
                 [GUIDE_END]
@@ -84,10 +100,11 @@ public class AdCopyService {
                 request.projectTitle(),
                 request.requestText(),
                 request.selectedKeywords(),
-                request.adFocus(),
                 request.trendKeywords(),
                 request.hashtags(),
-                request.styleSummary());
+                request.styleSummary(),
+                focusInstruction,
+                targetInstruction);
 
         String response = chatClient.prompt().user(prompt).call().content();
         log.info("광고 가이드라인 생성 응답: {}", response);
@@ -142,30 +159,53 @@ public class AdCopyService {
     private AdGuidesResponse parseAdGuidesResponse(String response) {
         List<AdGuidesResponse.GuidelineOption> guides = new ArrayList<>();
         String clean = (response == null ? "" : response).replaceAll("\\*\\*", "");
-        String body = clean;
 
-        Matcher range = Pattern.compile("(?s)\\[GUIDE_START\\](.*?)\\[GUIDE_END\\]").matcher(clean);
-        if (range.find())
-            body = range.group(1);
+        Matcher blockMatcher = Pattern.compile("(?s)\\[GUIDE_START\\](.*?)\\[GUIDE_END\\]").matcher(clean);
 
-        List<AdGuideAiResponse.Section> sections = new ArrayList<>();
+        int index = 1;
+        String recommendedId = null;
+        int highestScore = -1;
 
-        Pattern p = Pattern.compile("(?s)섹션\\s*:\\s*(.*?)\\n\\s*내용\\s*:\\s*(.*?)(?=\\n\\s*섹션\\s*:|$)");
-        Matcher m = p.matcher(body);
+        while (blockMatcher.find()) {
+            String block = blockMatcher.group(1);
 
-        while (m.find()) {
-            String section = m.group(1).trim();
-            String content = m.group(2).trim();
-            if (!section.isBlank() && !content.isBlank()) {
-                sections.add(new AdGuideAiResponse.Section(section, content));
+            String id = extractValue(block, "ID");
+            if (id.isBlank()) id = "guide-" + index;
+            String title = extractValue(block, "Title");
+            String summary = extractValue(block, "Summary");
+            String badge = extractValue(block, "Badge");
+            int score;
+            try {
+                score = Integer.parseInt(extractValue(block, "Score").replaceAll("[^0-9]", ""));
+            } catch (NumberFormatException e) {
+                score = 50;
             }
+            String rationale = extractValue(block, "Rationale");
+
+            Map<String, Object> keyPoints = new HashMap<>();
+            String tone = extractValue(block, "Tone");
+            String structure = extractValue(block, "Structure");
+            String cta = extractValue(block, "CTA");
+            if (!tone.isBlank()) keyPoints.put("tone", List.of(tone));
+            if (!structure.isBlank()) keyPoints.put("structure", structure);
+            if (!cta.isBlank()) keyPoints.put("cta", cta);
+
+            guides.add(new AdGuidesResponse.GuidelineOption(id, title, summary, badge, score, rationale, keyPoints));
+
+            if (score > highestScore) {
+                highestScore = score;
+                recommendedId = id;
+            }
+            index++;
         }
 
-        if (sections.isEmpty()) {
-            sections.add(new AdGuideAiResponse.Section("가이드라인", clean.trim()));
+        if (guides.isEmpty()) {
+            guides.add(new AdGuidesResponse.GuidelineOption(
+                    "guide-1", "가이드라인", clean.trim(), "", 50, "", Map.of()));
+            recommendedId = "guide-1";
         }
 
-        return new AdGuideAiResponse(sections);
+        return new AdGuidesResponse(recommendedId, guides);
     }
 
     // =========================================================
@@ -175,34 +215,12 @@ public class AdCopyService {
     public FinalCopyResponse generateFinalCopies(FinalCopyRequest request) {
         checkAiEnabled();
 
-        String prompt = """
-                당신은 마케팅 전략가입니다.
-                현재 최신 트렌드를 이끄는 키워드인 '%s'와(과) 우리 상품 '%s'을(를) 창의적으로 연결하여 5가지 다른 컨셉 가이드라인을 제안하세요.
-
-                각 가이드라인은 다음 형식을 정확히 지켜주세요:
-                [가이드라인 시작]
-                ID: (1~5 숫자만)
-                컨셉: (트렌드 키워드를 반영한 짧고 강렬한 컨셉명)
-                설명: (이 트렌드를 상품에 어떻게 접목했는지 전략 설명 1~2문장)
-                톤: (친근한, 전문적인, 유머러스한 등)
-                [가이드라인 끝]
-
-                총 5개를 작성하세요.
-                """.formatted(request.keyword(), request.productName());
-
-        String response = chatClient.prompt().user(prompt).call().content();
-        log.info("가이드라인 생성 응답: {}", response);
-
-        List<GuidelineResponse.Guideline> guidelines = parseGuidelines(response);
-        return new GuidelineResponse(request.keyword(), guidelines);
-    }
-
-    // =========================================================
-    // 기존: 2단계 최종 카피 생성
-    // =========================================================
-
-    public FinalCopyResponse generateFinalCopy(FinalCopyRequest request) {
-        checkAiEnabled();
+        String guidelineJson;
+        try {
+            guidelineJson = objectMapper.writeValueAsString(request.selectedGuideline());
+        } catch (Exception e) {
+            guidelineJson = String.valueOf(request.selectedGuideline());
+        }
 
         String prompt = """
                 당신은 전문 카피라이터입니다.
@@ -218,60 +236,40 @@ public class AdCopyService {
                 [COPY_END]
 
                 총 5개의 카피를 생성하세요.
-                """.formatted(guideInfo);
+                """.formatted(guidelineJson);
 
         String response = chatClient.prompt()
-                .system("당신은 한국어만 사용하는 AI입니다. SHORTFORM과 BANNER 프롬프트를 제외한 모든 응답을 한국어로 작성하세요.")
+                .system("당신은 한국어만 사용하는 AI입니다. 모든 응답을 한국어로 작성하세요.")
                 .user(prompt).call().content();
         log.info("최종 카피 생성 응답: {}", response);
 
         return parseFinalCopyResponse(response);
     }
 
-    private List<GuidelineResponse.Guideline> parseGuidelines(String response) {
-        List<GuidelineResponse.Guideline> guidelines = new ArrayList<>();
-        String[] blocks = response.split("\\[가이드라인 시작\\]");
+    private FinalCopyResponse parseFinalCopyResponse(String response) {
+        List<FinalCopyResponse.CopyOption> copies = new ArrayList<>();
+        String clean = (response == null ? "" : response).replaceAll("\\*\\*", "");
 
-        for (String block : blocks) {
-            String cleanBlock = block.split("\\[가이드라인 끝\\]")[0];
-            if (cleanBlock.trim().length() < 10)
-                continue;
+        Matcher blockMatcher = Pattern.compile("(?s)\\[COPY_START\\](.*?)\\[COPY_END\\]").matcher(clean);
 
-            try {
-                int id = Integer.parseInt(extractValue(cleanBlock, "ID").replaceAll("[^0-9]", ""));
-                String concept = extractValue(cleanBlock, "컨셉");
-                String description = extractValue(cleanBlock, "설명");
-                String tone = extractValue(cleanBlock, "톤");
+        int index = 1;
+        while (blockMatcher.find()) {
+            String block = blockMatcher.group(1);
+            String id = "copy-" + index;
+            String title = extractValue(block, "Title");
+            Matcher bodyMatcher = Pattern.compile("(?s)Body\\s*:\\s*(.*?)$").matcher(block.trim());
+            String body = bodyMatcher.find() ? bodyMatcher.group(1).trim() : "";
 
-                guidelines.add(new GuidelineResponse.Guideline(id, concept, description, tone));
-            } catch (Exception e) {
-                log.warn("카피 파싱 중 오류 발생: {}", e.getMessage());
-            }
+            copies.add(new FinalCopyResponse.CopyOption(id, title, body));
+            index++;
         }
-        return guidelines;
-    }
 
-    private FinalCopyResponse parseFinalResponse(String productName, String concept, String response) {
-        String cleanResponse = response.replaceAll("\\*\\*", "");
+        if (copies.isEmpty()) {
+            copies.add(new FinalCopyResponse.CopyOption("copy-1", "광고 카피", clean.trim()));
+        }
 
-        String copy = extractByTag(cleanResponse, "COPY");
-        String shortform = extractByTag(cleanResponse, "SHORTFORM");
-        String banner = extractByTag(cleanResponse, "BANNER");
-        String sns = extractByTag(cleanResponse, "SNS");
-        String reason = extractByTag(cleanResponse, "REASON");
-
-        if (copy.isEmpty())
-            copy = extractSectionFallback(cleanResponse, "광고 카피");
-        if (shortform.isEmpty())
-            shortform = extractSectionFallback(cleanResponse, "숏폼 프롬프트");
-        if (banner.isEmpty())
-            banner = extractSectionFallback(cleanResponse, "배너 프롬프트");
-        if (sns.isEmpty())
-            sns = extractSectionFallback(cleanResponse, "SNS 캡션");
-        if (reason.isEmpty())
-            reason = extractSectionFallback(cleanResponse, "선정 이유");
-
-        return FinalCopyResponse.of(productName, concept, copy, shortform, banner, sns, reason);
+        String recommendedId = copies.get(0).id();
+        return new FinalCopyResponse(recommendedId, copies);
     }
 
     private String extractByTag(String text, String tag) {

@@ -1,5 +1,6 @@
 package com.example.chillgram.domain.advertising.service;
 
+import lombok.extern.slf4j.Slf4j;
 import com.example.chillgram.common.exception.ApiException;
 import com.example.chillgram.common.exception.ErrorCode;
 import com.example.chillgram.common.google.FileStorage;
@@ -29,6 +30,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 @Service
+@Slf4j
 public class AdService {
 
         private final ProductRepository productRepository;
@@ -53,7 +55,8 @@ public class AdService {
                         TransactionalOperator tx,
                         JobService jobService,
                         ObjectMapper objectMapper,
-                        AdGenLogRepository adGenLogRepository) {
+                        AdGenLogRepository adGenLogRepository
+        ) {
                 this.productRepository = productRepository;
                 this.projectRepository = projectRepository;
                 this.eventCalendarRepository = eventCalendarRepository;
@@ -64,6 +67,7 @@ public class AdService {
                 this.jobService = jobService;
                 this.objectMapper = objectMapper;
                 this.adGenLogRepository = adGenLogRepository;
+                log.info("AdService initialized");
         }
 
         private Mono<Product> requireProduct(long productId) {
@@ -244,7 +248,6 @@ public class AdService {
                                                 finalCopyJson = objectMapper.writeValueAsString(req.finalCopy());
                                                 guidelineJson = objectMapper.writeValueAsString(req.guideline());
                                         } catch (JsonProcessingException e) {
-                                                // Fallback
                                                 finalCopyJson = String.valueOf(req.finalCopy());
                                                 guidelineJson = String.valueOf(req.guideline());
                                         }
@@ -258,6 +261,7 @@ public class AdService {
                                                         req.selectionReason());
                                 });
         }
+
         public Mono<AdGuideResponse> generateAdGuides(Long projectId, AdGuideRequest request, Long companyId) {
                 return projectRepository.findById(projectId)
                                 .filter(p -> p.getCompanyId().equals(companyId))
@@ -267,9 +271,11 @@ public class AdService {
                                                 .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND,
                                                                 "Product not found")))
                                                 .flatMap(product -> {
-                                                        AdGuideAiRequest aiReq = AdGuideAiRequest.of(project, product, request);
+                                                        AdGuideAiRequest aiReq = AdGuideAiRequest.of(project, product,
+                                                                        request);
                                                         return adCopyService.generateVisualGuidesMono(aiReq)
-                                                                        .map(options -> new AdGuideResponse(projectId, options));
+                                                                        .map(options -> new AdGuideResponse(projectId,
+                                                                                        options));
                                                 }))
                                 .onErrorMap(ex -> (ex instanceof ApiException) ? ex
                                                 : ApiException.of(ErrorCode.AD_GUIDE_GENERATION_FAILED,
