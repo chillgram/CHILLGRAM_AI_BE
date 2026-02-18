@@ -170,7 +170,8 @@ public class AdCopyService {
             String block = blockMatcher.group(1);
 
             String id = extractValue(block, "ID");
-            if (id.isBlank()) id = "guide-" + index;
+            if (id.isBlank())
+                id = "guide-" + index;
             String title = extractValue(block, "Title");
             String summary = extractValue(block, "Summary");
             String badge = extractValue(block, "Badge");
@@ -186,9 +187,12 @@ public class AdCopyService {
             String tone = extractValue(block, "Tone");
             String structure = extractValue(block, "Structure");
             String cta = extractValue(block, "CTA");
-            if (!tone.isBlank()) keyPoints.put("tone", List.of(tone));
-            if (!structure.isBlank()) keyPoints.put("structure", structure);
-            if (!cta.isBlank()) keyPoints.put("cta", cta);
+            if (!tone.isBlank())
+                keyPoints.put("tone", List.of(tone));
+            if (!structure.isBlank())
+                keyPoints.put("structure", structure);
+            if (!cta.isBlank())
+                keyPoints.put("cta", cta);
 
             guides.add(new AdGuidesResponse.GuidelineOption(id, title, summary, badge, score, rationale, keyPoints));
 
