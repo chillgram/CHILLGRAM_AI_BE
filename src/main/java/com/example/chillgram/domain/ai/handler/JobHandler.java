@@ -84,7 +84,7 @@ public class JobHandler {
 
     /**
      * BASIC: 업로드한 입력 이미지를 GCS에 저장하고,
-     * Worker에는 gs:// inputUrl 전달 (Worker가 gs:// 다운로드를 하기 때문)
+     * Worker에는 HTTPS inputUrl 전달
      */
     public Mono<ServerResponse> createBasicImagesJob(ServerRequest req) {
         return req.multipartData().flatMap(parts -> {
@@ -121,11 +121,8 @@ public class JobHandler {
 
             return gcs.storeFixed(f, objectName)
                     .flatMap(stored -> {
-                        // ✅ Worker 입력은 gs://
-                        final String inputGsUri = stored.gsUri();
-
                         final ObjectNode jobPayload = om.createObjectNode();
-                        jobPayload.put("inputUrl", inputGsUri);
+                        jobPayload.put("inputUrl", stored.fileUrl());
                         jobPayload.put("prompt", prompt);
 
                         final CreateJobRequest jobReq = new CreateJobRequest(JobEnums.JobType.BASIC, jobPayload);
@@ -158,7 +155,7 @@ public class JobHandler {
                         return Mono.error(ApiException.of(ErrorCode.INTERNAL_ERROR, "outputUri missing"));
                     }
 
-                    // ✅ gs:// => https://storage.googleapis.com/... 로 변환해서 프론트에 준다
+                    // HTTPS 정규화 (이미 HTTPS면 pass-through)
                     String publicUrl = gcs.toPublicUrl(out);
 
                     var candidates = new ArrayList<Map<String, Object>>();

@@ -319,7 +319,7 @@ public class ProductService {
                                                                                                         .projectId(projectId)
                                                                                                         .title(project.getTitle())
                                                                                                         .mockupImgUrl(stored
-                                                                                                                        .gsUri()) // 원본
+                                                                                                                        .fileUrl()) // HTTPS URL
                                                                                                                                   // 도면
                                                                                                         .gcsImgUrl(null) // 생성된
                                                                                                                          // 목업은
@@ -341,7 +341,7 @@ public class ProductService {
                                                                                         ObjectNode payload = om
                                                                                                         .createObjectNode();
                                                                                         payload.put("inputUri",
-                                                                                                        stored.gsUri());
+                                                                                                        stored.fileUrl());
                                                                                         payload.put("baseImageUri",
                                                                                                         baseImageUrl);
 
@@ -371,14 +371,14 @@ public class ProductService {
                                                                                                         // DB 트랜잭션 실패 시
                                                                                                         // GCS 업로드 취소
                                                                                                         .onErrorResume(err -> {
-                                                                                                                log.error("Failed to request package mockup job. Compensating by deleting GCS object: {}",
-                                                                                                                                stored.gsUri(),
+                                                                                                                log.error("Failed to request package mockup job. Compensating by deleting uploaded file: {}",
+                                                                                                                                stored.fileUrl(),
                                                                                                                                 err);
                                                                                                                 return gcs.delete(
-                                                                                                                                stored.gsUri())
+                                                                                                                                stored.fileUrl())
                                                                                                                                 .onErrorResume(delErr -> {
-                                                                                                                                        log.warn("Failed to clean up GCS object after transaction failure: {}",
-                                                                                                                                                        stored.gsUri(),
+                                                                                                                                        log.warn("Failed to clean up uploaded file after transaction failure: {}",
+                                                                                                                                                        stored.fileUrl(),
                                                                                                                                                         delErr);
                                                                                                                                         return Mono.empty();
                                                                                                                                 })

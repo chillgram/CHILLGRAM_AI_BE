@@ -26,9 +26,9 @@ public interface FileStorage {
     }
 
     /**
-     * Delete object identified by gs://bucket/path
+     * Delete object identified by gs:// URI or HTTPS URL.
      *
-     * @param gsUri gs://... uri
+     * @param uri gs://... or https://... URL
      */
-    Mono<Void> delete(String gsUri);
+    Mono<Void> delete(String uri);
 }

@@ -19,10 +19,13 @@ public class ContentService {
 
     private final ContentRepository contentRepository;
     private final ContentAssetRepository contentAssetRepository;
+    private final com.example.chillgram.common.google.GcsFileStorage gcs;
 
-    public ContentService(ContentRepository contentRepository, ContentAssetRepository contentAssetRepository) {
+    public ContentService(ContentRepository contentRepository, ContentAssetRepository contentAssetRepository,
+            com.example.chillgram.common.google.GcsFileStorage gcs) {
         this.contentRepository = contentRepository;
         this.contentAssetRepository = contentAssetRepository;
+        this.gcs = gcs;
     }
 
     // ============================
@@ -128,14 +131,14 @@ public class ContentService {
                 c.getTitle(), c.getBody(), c.getStatus(), c.getTags(),
                 c.getViewCount(), c.getLikeCount(), c.getShareCount(),
                 c.getBannerRatio(),
-                c.getGcsImgUrl(), c.getMockupImgUrl(),
+                gcs.toPublicUrl(c.getGcsImgUrl()), gcs.toPublicUrl(c.getMockupImgUrl()),
                 c.getCreatedAt(), c.getUpdatedAt());
     }
 
     private ContentAssetResponse toAssetResponse(ContentAsset a) {
         return new ContentAssetResponse(
                 a.getId(), a.getContentId(), a.getAssetType(),
-                a.getFileUrl(), a.getThumbUrl(), a.getMimeType(),
+                gcs.toPublicUrl(a.getFileUrl()), gcs.toPublicUrl(a.getThumbUrl()), a.getMimeType(),
                 a.getFileSize(), a.getWidth(), a.getHeight(),
                 a.getDurationMs(), a.getSortOrder(), a.getCreatedAt());
     }

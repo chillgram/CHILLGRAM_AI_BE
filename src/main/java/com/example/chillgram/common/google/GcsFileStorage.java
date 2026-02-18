@@ -183,20 +183,10 @@ public class GcsFileStorage implements FileStorage {
         }
 
         @Override
-        public Mono<Void> delete(String gsUri) {
+        public Mono<Void> delete(String uri) {
                 return Mono.fromCallable(() -> {
-                        if (!gsUri.startsWith("gs://"))
-                                throw new IllegalArgumentException("not gs:// uri: " + gsUri);
-                        String noScheme = gsUri.substring("gs://".length());
-                        int slash = noScheme.indexOf('/');
-                        if (slash < 0)
-                                throw new IllegalArgumentException("invalid gs uri: " + gsUri);
-                        String bucketName = noScheme.substring(0, slash);
-                        String object = noScheme.substring(slash + 1);
-
-                        // storage.delete returns boolean; ignore result but surface failures as
-                        // exceptions if any
-                        storage.delete(BlobId.of(bucketName, object));
+                        GcsLocation loc = parseGcsLocation(uri);
+                        storage.delete(BlobId.of(loc.bucket(), loc.object()));
                         return null;
                 }).subscribeOn(Schedulers.boundedElastic()).then();
         }

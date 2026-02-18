@@ -15,13 +15,21 @@ import reactor.core.publisher.Mono;
 import java.util.List;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class ProjectService {
 
         private final ProjectRepository projectRepository;
         private final ContentRepository contentRepository;
         private final ProductRepository productRepository;
+        private final com.example.chillgram.common.google.GcsFileStorage gcs;
+
+        public ProjectService(ProjectRepository projectRepository, ContentRepository contentRepository,
+                        ProductRepository productRepository, com.example.chillgram.common.google.GcsFileStorage gcs) {
+                this.projectRepository = projectRepository;
+                this.contentRepository = contentRepository;
+                this.productRepository = productRepository;
+                this.gcs = gcs;
+        }
 
         /**
          * 제품의 프로젝트 목록 조회 (Optimized: Single query for counts)
@@ -37,9 +45,9 @@ public class ProjectService {
                                                 pc.adMessageTarget(),
                                                 pc.contentCount(),
                                                 pc.createdAt(),
-                                                pc.userImgGcsUrl(),
-                                                pc.dielineGcsUrl(),
-                                                pc.mockupResultUrl()))
+                                                gcs.toPublicUrl(pc.userImgGcsUrl()),
+                                                gcs.toPublicUrl(pc.dielineGcsUrl()),
+                                                gcs.toPublicUrl(pc.mockupResultUrl())))
                                 .collectList();
         }
 
@@ -64,7 +72,16 @@ public class ProjectService {
                                                         })
                                                         .thenReturn(savedProject);
                                 })
-                                .map(savedProject -> ProjectResponse.of(savedProject, 0L));
+                                .map(savedProject -> {
+                                        ProjectResponse resp = ProjectResponse.of(savedProject, 0L);
+                                        return new ProjectResponse(
+                                                        resp.projectId(), resp.title(), resp.type(), resp.status(),
+                                                        resp.adMessageFocus(), resp.adMessageTarget(),
+                                                        resp.contentCount(), resp.createdAt(),
+                                                        gcs.toPublicUrl(resp.userImgGcsUrl()),
+                                                        gcs.toPublicUrl(resp.dielineGcsUrl()),
+                                                        gcs.toPublicUrl(resp.mockupResultUrl()));
+                                });
         }
 
 }
