@@ -63,6 +63,22 @@ public class Project {
     @Column("userimg_gcs_url")
     private String userImgGcsUrl;
 
+    @Column("dieline_gcs_url")
+    private String dielineGcsUrl;
+
+    @Column("mockup_result_url")
+    private String mockupResultUrl;
+
+    public void applyDieline(String url) {
+        this.dielineGcsUrl = url;
+        this.updatedAt = LocalDateTime.now();
+    }
+
+    public void applyMockupResult(String url) {
+        this.mockupResultUrl = url;
+        this.updatedAt = LocalDateTime.now();
+    }
+
     public enum ProjectType {
         AD, // 광고
         DESIGN // 도안

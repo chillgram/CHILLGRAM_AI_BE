@@ -25,6 +25,8 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import com.example.chillgram.domain.project.repository.ProjectRepository; // Added import
+
 @Service
 @Slf4j
 public class JobService {
@@ -36,6 +38,7 @@ public class JobService {
     private final String jobsRoutingKey;
     private final com.example.chillgram.domain.content.service.ContentService contentService;
     private final org.springframework.amqp.core.AmqpTemplate amqpTemplate;
+    private final ProjectRepository projectRepository; // Added field
 
     // ✅ gs:// -> https:// 변환용 (GcsFileStorage와 동일한 개념)
     private final String gcsBucket;
@@ -49,6 +52,7 @@ public class JobService {
             @Value("${app.jobs.routing-key}") String jobsRoutingKey,
             com.example.chillgram.domain.content.service.ContentService contentService,
             org.springframework.amqp.core.AmqpTemplate amqpTemplate,
+            ProjectRepository projectRepository, // Added parameter
             @Value("${gcs.bucket}") String gcsBucket,
             @Value("${gcs.publicBaseUrl}") String gcsPublicBaseUrl) {
         this.jobRepo = jobRepo;
@@ -58,6 +62,7 @@ public class JobService {
         this.jobsRoutingKey = jobsRoutingKey;
         this.contentService = contentService;
         this.amqpTemplate = amqpTemplate;
+        this.projectRepository = projectRepository; // Added assignment
         this.gcsBucket = gcsBucket;
         this.gcsPublicBaseUrl = stripTrailingSlash(gcsPublicBaseUrl);
     }
@@ -116,18 +121,31 @@ public class JobService {
                         // ✅ gs://면 https로 변환해서 저장
                         String normalized = normalizeOutputUri(req.outputUri());
 
-                        // [P0 Fix] DIELINE 작업 성공 시 Content 업데이트
+                        // [P0 Fix] DIELINE 작업 성공 시 Project 또는 Content 업데이트
                         Mono<Void> sideEffect = Mono.empty();
                         if (existing
                                 .jobType() == com.example.chillgram.domain.advertising.dto.jobs.JobEnums.JobType.DIELINE) {
                             JsonNode pl = existing.payload();
-                            if (pl != null && pl.has("contentId")) {
+                            if (pl != null && pl.has("projectId")) {
+                                long projectId = pl.get("projectId").asLong();
+                                // [New] Project 업데이트
+                                sideEffect = projectRepository.findById(projectId)
+                                        .flatMap(project -> {
+                                            project.applyMockupResult(normalized);
+                                            return projectRepository.save(project);
+                                        })
+                                        .switchIfEmpty(Mono.fromRunnable(() -> log.warn(
+                                                "Project not found when applying mockup result. projectId={}, jobId={}",
+                                                projectId, jobId)))
+                                        .then();
+                            } else if (pl != null && pl.has("contentId")) {
                                 long contentId = pl.get("contentId").asLong();
-                                // [Refactor] ContentService 호출 (순환 참조 방지 및 역할 분리)
+                                // [Legacy] ContentService 호출
                                 sideEffect = contentService.updateMockupResult(contentId, normalized).then();
                             } else {
-                                // [Refactor] contentId 누락 시 경고 로그 (Legacy Job 등)
-                                log.warn("DIELINE job completed but no contentId in payload. jobId={}", jobId);
+                                // [Refactor] projectId/contentId 누락 시 경고 로그
+                                log.warn("DIELINE job completed but no projectId or contentId in payload. jobId={}",
+                                        jobId);
                             }
                         }
 
@@ -140,13 +158,18 @@ public class JobService {
                                 : req.errorCode();
                         String em = (req.errorMessage() == null) ? "" : req.errorMessage();
 
-                        // [Fix] Job 실패 시 Content도 FAILED로 변경
+                        // [Fix] Job 실패 시 처리
                         Mono<Void> failSideEffect = Mono.empty();
                         if (existing
                                 .jobType() == com.example.chillgram.domain.advertising.dto.jobs.JobEnums.JobType.DIELINE) {
                             JsonNode pl = existing.payload();
-                            if (pl != null && pl.has("contentId")) {
+                            if (pl != null && pl.has("projectId")) {
+                                long projectId = pl.get("projectId").asLong();
+                                // [New] Project 실패 시 로그만 (상태 변경 없음)
+                                log.info("Project mockup generation failed. projectId={}, reason={}", projectId, em);
+                            } else if (pl != null && pl.has("contentId")) {
                                 long contentId = pl.get("contentId").asLong();
+                                // [Legacy] Content 실패 처리
                                 failSideEffect = contentService.updateMockupFailed(contentId).then();
                             }
                         }

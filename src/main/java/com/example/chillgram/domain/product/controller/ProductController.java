@@ -99,7 +99,7 @@ public class ProductController {
 
     @PostMapping("/{id}/add_package")
     @ResponseStatus(HttpStatus.ACCEPTED)
-    @Operation(summary = "도면업로드", description = "도면 이미지를 업로드하고 목업 생성 작업을 요청합니다.")
+    @Operation(summary = "패키지 목업 생성 (도면 업로드)", description = "도면 이미지를 업로드하고 프로젝트에 연결된 패키지 목업 생성 작업을 요청합니다.")
     public Mono<com.example.chillgram.domain.product.dto.PackageMockupResponse> addPackage(
             @Parameter(description = "제품 ID", required = true) @PathVariable Long id,
             @Parameter(description = "프로젝트 ID", required = true) @RequestParam Long projectId,

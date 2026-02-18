@@ -13,7 +13,9 @@ public record ProjectResponse(
         Integer adMessageTarget,
         Long contentCount,
         LocalDateTime createdAt,
-        String userImgGcsUrl) {
+        String userImgGcsUrl,
+        String dielineGcsUrl,
+        String mockupResultUrl) {
     public static ProjectResponse of(Project project, Long contentCount) {
         return new ProjectResponse(
                 project.getId(),
@@ -24,6 +26,8 @@ public record ProjectResponse(
                 project.getAdMessageTarget(),
                 contentCount,
                 project.getCreatedAt(),
-                project.getUserImgGcsUrl());
+                project.getUserImgGcsUrl(),
+                project.getDielineGcsUrl(),
+                project.getMockupResultUrl());
     }
 }
