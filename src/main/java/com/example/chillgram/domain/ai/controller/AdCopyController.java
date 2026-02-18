@@ -23,12 +23,12 @@ public class AdCopyController {
     private final AdService adService;
 
     @Operation(summary = "1단계: 비주얼 가이드라인 생성")
-    @PostMapping("/projects/{projectId}/guides")
+    @PostMapping("/projects/{projectId}/ad-guides")
     public Mono<AdGuideResponse> generateVisualGuides(
             @PathVariable Long projectId,
             @RequestBody AdGuideRequest request,
             @AuthenticationPrincipal AuthPrincipal principal) {
-        
+
         return adService.generateAdGuides(projectId, request, principal.companyId());
     }
 
@@ -38,7 +38,7 @@ public class AdCopyController {
             @PathVariable Long projectId,
             @RequestBody CopyVariationRequest request,
             @AuthenticationPrincipal AuthPrincipal principal) {
-        
+
         return adService.generateCopyVariations(projectId, request, principal.companyId());
     }
 }
