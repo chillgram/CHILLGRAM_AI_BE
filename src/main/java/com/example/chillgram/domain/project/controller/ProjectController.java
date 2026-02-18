@@ -54,41 +54,41 @@ public class ProjectController {
         return projectService.createProject(productId, principal.companyId(), principal.userId(), request);
     }
 
-    @PostMapping(value = "/{projectId}/basic-images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "이미지 업로드 및 미리보기 작업 생성", description = "이미지를 업로드하고 AI 미리보기 작업을 생성합니다.")
-    public Mono<Map<String, Object>> createPreviewJob(
-            @PathVariable long projectId,
-            @RequestPart("payload") String payloadJson,
-            @RequestPart("file") FilePart file) {
-        // 1) payload parse
-        Mono<ObjectNode> payloadMono = Mono.fromCallable(() -> (ObjectNode) om.readTree(payloadJson))
-                .onErrorMap(e -> ApiException.of(ErrorCode.VALIDATION_FAILED, "payload must be valid JSON"));
-
-        // 2) input image tmp 업로드 (중요: tmp/inputs prefix로 분리)
-        Mono<FileStorage.StoredFile> storedMono = gcsFileStorage.store(file, "tmp/inputs");
-
-        // 3) payload에 inputUri(gs://...) 넣고 job 요청
-        return Mono.zip(payloadMono, storedMono)
-                .flatMap(t -> {
-                    ObjectNode payload = t.getT1();
-                    FileStorage.StoredFile stored = t.getT2();
-
-                    if (stored.fileUrl() == null || stored.fileUrl().isBlank()) {
-                        return Mono.error(ApiException.of(ErrorCode.INTERNAL_ERROR, "gsUri missing in StoredFile"));
-                    }
-
-                    payload.put("inputUri", stored.fileUrl());
-                    if (!payload.has("n"))
-                        payload.put("n", 3);
-
-                    // 너희가 말한 프롬프트 옵션들(예시): payload에 그대로 담겨있다고 가정
-                    // style/background/logoPosition/productNameStyle/removeText...
-
-                    CreateJobRequest req = new CreateJobRequest(JobEnums.JobType.BASIC, payload);
-
-                    return jobService.requestJob(projectId, req, "");
-                })
-                .map(jobId -> Map.of("jobId", jobId.toString(), "status", "PENDING"));
-    }
+//    @PostMapping(value = "/{productId}/basic-images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+//    @Operation(summary = "이미지 업로드 및 미리보기 작업 생성", description = "이미지를 업로드하고 AI 미리보기 작업을 생성합니다.")
+//    public Mono<Map<String, Object>> createPreviewJob(
+//            @PathVariable long productId,
+//            @RequestPart("payload") String payloadJson,
+//            @RequestPart("file") FilePart file) {
+//        // 1) payload parse
+//        Mono<ObjectNode> payloadMono = Mono.fromCallable(() -> (ObjectNode) om.readTree(payloadJson))
+//                .onErrorMap(e -> ApiException.of(ErrorCode.VALIDATION_FAILED, "payload must be valid JSON"));
+//
+//        // 2) input image tmp 업로드 (중요: tmp/inputs prefix로 분리)
+//        Mono<FileStorage.StoredFile> storedMono = gcsFileStorage.store(file, "tmp/inputs");
+//
+//        // 3) payload에 inputUri(gs://...) 넣고 job 요청
+//        return Mono.zip(payloadMono, storedMono)
+//                .flatMap(t -> {
+//                    ObjectNode payload = t.getT1();
+//                    FileStorage.StoredFile stored = t.getT2();
+//
+//                    if (stored.fileUrl() == null || stored.fileUrl().isBlank()) {
+//                        return Mono.error(ApiException.of(ErrorCode.INTERNAL_ERROR, "gsUri missing in StoredFile"));
+//                    }
+//
+//                    payload.put("inputUri", stored.fileUrl());
+//                    if (!payload.has("n"))
+//                        payload.put("n", 3);
+//
+//                    // 너희가 말한 프롬프트 옵션들(예시): payload에 그대로 담겨있다고 가정
+//                    // style/background/logoPosition/productNameStyle/removeText...
+//
+//                    CreateJobRequest req = new CreateJobRequest(JobEnums.JobType.BASIC, payload);
+//
+//                    return jobService.requestJob(productId, req, "");
+//                })
+//                .map(jobId -> Map.of("jobId", jobId.toString(), "status", "PENDING"));
+//    }
 
 }
