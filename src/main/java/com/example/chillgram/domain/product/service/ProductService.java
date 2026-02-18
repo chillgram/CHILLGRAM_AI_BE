@@ -311,33 +311,49 @@ public class ProductService {
                                                                 return gcs.storeFixed(file, objectBase)
                                                                                 .flatMap(stored -> {
                                                                                         // Content 엔티티 생성
-                                                                                        Content content = Content.builder()
-                                                                                                        .companyId(principal.companyId())
+                                                                                        Content content = Content
+                                                                                                        .builder()
+                                                                                                        .companyId(principal
+                                                                                                                        .companyId())
                                                                                                         .productId(productId)
                                                                                                         .projectId(projectId)
                                                                                                         .title(project.getTitle())
-                                                                                                        .mockupImgUrl(stored.gsUri()) // 원본 도면
-                                                                                                        .gcsImgUrl(null) // 생성된 목업은 아직 없음
+                                                                                                        .mockupImgUrl(stored
+                                                                                                                        .gsUri()) // 원본
+                                                                                                                                  // 도면
+                                                                                                        .gcsImgUrl(null) // 생성된
+                                                                                                                         // 목업은
+                                                                                                                         // 아직
+                                                                                                                         // 없음
                                                                                                         .status("DRAFT")
                                                                                                         .contentType("MOCKUP")
                                                                                                         .viewCount(0L)
                                                                                                         .likeCount(0L)
                                                                                                         .shareCount(0L)
-                                                                                                        .createdBy(principal.userId())
-                                                                                                        .createdAt(LocalDateTime.now())
-                                                                                                        .updatedAt(LocalDateTime.now())
+                                                                                                        .createdBy(principal
+                                                                                                                        .userId())
+                                                                                                        .createdAt(LocalDateTime
+                                                                                                                        .now())
+                                                                                                        .updatedAt(LocalDateTime
+                                                                                                                        .now())
                                                                                                         .build();
 
-                                                                                        ObjectNode payload = om.createObjectNode();
-                                                                                        payload.put("inputUri", stored.gsUri());
-                                                                                        payload.put("baseImageUri", baseImageUrl);
+                                                                                        ObjectNode payload = om
+                                                                                                        .createObjectNode();
+                                                                                        payload.put("inputUri",
+                                                                                                        stored.gsUri());
+                                                                                        payload.put("baseImageUri",
+                                                                                                        baseImageUrl);
 
                                                                                         CreateJobRequest jobReq = new CreateJobRequest(
-                                                                                                        JobType.DIELINE, payload);
+                                                                                                        JobType.DIELINE,
+                                                                                                        payload);
 
-                                                                                        // 3. DB 트랜잭션 (Content 저장 -> Job 요청)
+                                                                                        // 3. DB 트랜잭션 (Content 저장 -> Job
+                                                                                        // 요청)
                                                                                         return tx.transactional(
-                                                                                                        contentRepo.save(content)
+                                                                                                        contentRepo.save(
+                                                                                                                        content)
                                                                                                                         .flatMap(savedContent -> {
                                                                                                                                 payload.put("contentId",
                                                                                                                                                 savedContent.getId());
@@ -350,17 +366,24 @@ public class ProductService {
                                                                                                                                                                 savedContent.getId(),
                                                                                                                                                                 stored.fileUrl()));
                                                                                                                         }))
-                                                                                                        // 4. 보상(Compensation): DB 트랜잭션 실패 시 GCS 업로드 취소
+                                                                                                        // 4.
+                                                                                                        // 보상(Compensation):
+                                                                                                        // DB 트랜잭션 실패 시
+                                                                                                        // GCS 업로드 취소
                                                                                                         .onErrorResume(err -> {
                                                                                                                 log.error("Failed to request package mockup job. Compensating by deleting GCS object: {}",
-                                                                                                                                stored.gsUri(), err);
-                                                                                                                return gcs.delete(stored.gsUri())
+                                                                                                                                stored.gsUri(),
+                                                                                                                                err);
+                                                                                                                return gcs.delete(
+                                                                                                                                stored.gsUri())
                                                                                                                                 .onErrorResume(delErr -> {
                                                                                                                                         log.warn("Failed to clean up GCS object after transaction failure: {}",
-                                                                                                                                                        stored.gsUri(), delErr);
+                                                                                                                                                        stored.gsUri(),
+                                                                                                                                                        delErr);
                                                                                                                                         return Mono.empty();
                                                                                                                                 })
-                                                                                                                                .then(Mono.error(err));
+                                                                                                                                .then(Mono.error(
+                                                                                                                                                err));
                                                                                                         });
                                                                                 });
                                                         });
