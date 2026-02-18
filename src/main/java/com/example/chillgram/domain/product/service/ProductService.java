@@ -270,7 +270,7 @@ public class ProductService {
          * 도면 업로드 및 목업 생성 작업 요청
          * 트랜잭션과 보상(Compensation)을 명시적으로 관리
          */
-
+        // @Transactional // [Remove] tx.transactional()과 중복 및 중첩 방지
         public Mono<com.example.chillgram.domain.product.dto.PackageMockupResponse> addPackageMockup(long productId,
                         long projectId, String baseImageUrl, FilePart file, AuthPrincipal principal) {
                 return productRepository.findById(productId)

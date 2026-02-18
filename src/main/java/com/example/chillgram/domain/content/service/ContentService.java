@@ -14,6 +14,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @Service
+@lombok.extern.slf4j.Slf4j
 public class ContentService {
 
     private final ContentRepository contentRepository;
@@ -71,26 +72,28 @@ public class ContentService {
     // Mockup 업데이트 (from JobService)
     // ============================
 
-    @org.springframework.transaction.annotation.Transactional
-    public Mono<Content> updateMockupResult(Long contentId, String mockupImgUrl) {
+    public Mono<Content> updateMockupResult(Long contentId, String generatedImgUrl) {
         return contentRepository.findById(contentId)
-                // [Fix] Content 미발견 시 에러 무시하지 않고 로그 남김
                 .switchIfEmpty(Mono.defer(() -> {
-                    // 로그는 Slf4j가 없으므로 System.out 또는 추후 @Slf4j 추가 필요. 여기서는 에러 전파.
+                    log.error("Content not found for mockup result: {}", contentId);
                     return Mono.error(
                             ApiException.of(ErrorCode.NOT_FOUND, "Content not found for mockup result: " + contentId));
                 }))
                 .flatMap(content -> {
-                    content.updateMockup(mockupImgUrl);
+                    content.updateMockup(generatedImgUrl);
                     return contentRepository.save(content);
                 });
     }
 
-    @org.springframework.transaction.annotation.Transactional
     public Mono<Content> updateMockupFailed(Long contentId) {
         return contentRepository.findById(contentId)
+                .switchIfEmpty(Mono.defer(() -> {
+                    log.error("Content not found for mockup failure: {}", contentId);
+                    return Mono.error(
+                            ApiException.of(ErrorCode.NOT_FOUND, "Content not found for mockup failure: " + contentId));
+                }))
                 .flatMap(content -> {
-                    content.updateMockupFailed(); // Content 엔티티에 메서드 추가 필요
+                    content.updateMockupFailed();
                     return contentRepository.save(content);
                 });
     }
@@ -125,6 +128,7 @@ public class ContentService {
                 c.getTitle(), c.getBody(), c.getStatus(), c.getTags(),
                 c.getViewCount(), c.getLikeCount(), c.getShareCount(),
                 c.getBannerRatio(),
+                c.getGcsImgUrl(), c.getMockupImgUrl(),
                 c.getCreatedAt(), c.getUpdatedAt());
     }
 

@@ -56,6 +56,6 @@ public class JobResultsConsumer {
         jobService.applyResult(jobId, req)
                 .subscribeOn(Schedulers.boundedElastic())
                 .doOnError(ex -> log.error("applyResult failed. jobId={}, body={}", jobId, body, ex))
-                .subscribe();
+                .block(); // [Fix] Void 메서드에서 비동기 유실 방지 및 안정적인 ACK 보장
     }
 }

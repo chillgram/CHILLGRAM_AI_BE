@@ -97,12 +97,12 @@ public class Content {
 
     public void updateMockup(String generatedImgUrl) {
         this.gcsImgUrl = generatedImgUrl; // [Fix] 생성된 목업을 gcs_img_url에 저장 (사용자 요구사항)
-        this.status = "COMPLETED";
+        this.status = "ACTIVE"; // [Fix] COMPLETED -> ACTIVE (DB 스키마 정렬)
         this.updatedAt = LocalDateTime.now();
     }
 
     public void updateMockupFailed() {
-        this.status = "FAILED";
+        this.status = "ARCHIVED"; // [Fix] FAILED -> ARCHIVED (DB 스키마 정렬)
         this.updatedAt = LocalDateTime.now();
     }
 }
