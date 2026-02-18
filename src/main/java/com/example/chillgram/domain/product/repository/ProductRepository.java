@@ -32,17 +32,17 @@ public interface ProductRepository extends R2dbcRepository<Product, Long> {
         // Optimized Query (N+1 Solve)
         @org.springframework.data.r2dbc.repository.Query("""
                             SELECT p.product_id AS id,
-                                   p.company_id,
-                                   p.name,
-                                   p.category,
-                                   p.description,
-                                   p.is_active,
-                                   p.created_by,
-                                   p.created_at,
-                                   p.updated_at,
-                                   p.review_url,
-                                   c.name AS company_name,
-                                   u.name AS created_by_name
+                                   p.company_id AS companyId,
+                                   p.name AS name,
+                                   p.category AS category,
+                                   p.description AS description,
+                                   p.is_active AS isActive,
+                                   p.created_by AS createdBy,
+                                   p.created_at AS createdAt,
+                                   p.updated_at AS updatedAt,
+                                   p.review_url AS reviewUrl,
+                                   c.name AS companyName,
+                                   u.name AS createdByName
                               FROM product p
                               LEFT JOIN company c ON p.company_id = c.company_id
                               LEFT JOIN app_user u ON p.created_by = u.user_id
