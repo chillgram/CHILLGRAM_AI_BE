@@ -121,14 +121,18 @@ public class JobService {
                         // ✅ gs://면 https로 변환해서 저장
                         String normalized = normalizeOutputUri(req.outputUri());
 
-                        // [P0 Fix] DIELINE 작업 성공 시 Project 또는 Content 업데이트
+                        // [Fix] DIELINE 작업 성공 시 Content 업데이트 (contentId 우선)
                         Mono<Void> sideEffect = Mono.empty();
                         if (existing
                                 .jobType() == com.example.chillgram.domain.advertising.dto.jobs.JobEnums.JobType.DIELINE) {
                             JsonNode pl = existing.payload();
-                            if (pl != null && pl.has("projectId")) {
+                            if (pl != null && pl.has("contentId")) {
+                                long contentId = pl.get("contentId").asLong();
+                                // Content 기반 목업 결과 업데이트
+                                sideEffect = contentService.updateMockupResult(contentId, normalized).then();
+                            } else if (pl != null && pl.has("projectId")) {
                                 long projectId = pl.get("projectId").asLong();
-                                // [New] Project 업데이트
+                                // Project 기반 목업 결과 업데이트 (fallback)
                                 sideEffect = projectRepository.findById(projectId)
                                         .flatMap(project -> {
                                             project.applyMockupResult(normalized);
@@ -138,13 +142,8 @@ public class JobService {
                                                 "Project not found when applying mockup result. projectId={}, jobId={}",
                                                 projectId, jobId)))
                                         .then();
-                            } else if (pl != null && pl.has("contentId")) {
-                                long contentId = pl.get("contentId").asLong();
-                                // [Legacy] ContentService 호출
-                                sideEffect = contentService.updateMockupResult(contentId, normalized).then();
                             } else {
-                                // [Refactor] projectId/contentId 누락 시 경고 로그
-                                log.warn("DIELINE job completed but no projectId or contentId in payload. jobId={}",
+                                log.warn("DIELINE job completed but no contentId or projectId in payload. jobId={}",
                                         jobId);
                             }
                         }
@@ -158,19 +157,19 @@ public class JobService {
                                 : req.errorCode();
                         String em = (req.errorMessage() == null) ? "" : req.errorMessage();
 
-                        // [Fix] Job 실패 시 처리
+                        // [Fix] Job 실패 시 처리 (contentId 우선)
                         Mono<Void> failSideEffect = Mono.empty();
                         if (existing
                                 .jobType() == com.example.chillgram.domain.advertising.dto.jobs.JobEnums.JobType.DIELINE) {
                             JsonNode pl = existing.payload();
-                            if (pl != null && pl.has("projectId")) {
-                                long projectId = pl.get("projectId").asLong();
-                                // [New] Project 실패 시 로그만 (상태 변경 없음)
-                                log.info("Project mockup generation failed. projectId={}, reason={}", projectId, em);
-                            } else if (pl != null && pl.has("contentId")) {
+                            if (pl != null && pl.has("contentId")) {
                                 long contentId = pl.get("contentId").asLong();
-                                // [Legacy] Content 실패 처리
+                                // Content 기반 목업 실패 처리 (status → ARCHIVED)
                                 failSideEffect = contentService.updateMockupFailed(contentId).then();
+                            } else if (pl != null && pl.has("projectId")) {
+                                long projectId = pl.get("projectId").asLong();
+                                // Project 기반 실패 시 로그만 (fallback)
+                                log.info("Project mockup generation failed. projectId={}, reason={}", projectId, em);
                             }
                         }
 

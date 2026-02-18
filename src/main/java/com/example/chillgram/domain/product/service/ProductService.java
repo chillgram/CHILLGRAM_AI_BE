@@ -16,6 +16,8 @@ import com.example.chillgram.domain.product.dto.ProductUpdateRequest;
 import com.example.chillgram.domain.product.entity.Product;
 import com.example.chillgram.domain.product.repository.ProductRepository;
 import com.example.chillgram.domain.project.repository.ProjectRepository;
+import com.example.chillgram.domain.content.entity.Content;
+import com.example.chillgram.domain.content.repository.ContentRepository;
 import com.example.chillgram.common.security.AuthPrincipal;
 import com.example.chillgram.domain.user.domain.AppUser;
 import com.example.chillgram.domain.user.repository.AppUserRepository;
@@ -46,6 +48,7 @@ public class ProductService {
         private final AppUserRepository appUserRepository;
         private final JobService jobService;
         private final GcsFileStorage gcs;
+        private final ContentRepository contentRepo;
         private final ProjectRepository projectRepository;
         private final TransactionalOperator tx;
         private final ObjectMapper om;
@@ -56,6 +59,7 @@ public class ProductService {
                         AppUserRepository appUserRepository,
                         JobService jobService,
                         GcsFileStorage gcs,
+                        ContentRepository contentRepo,
                         ProjectRepository projectRepository,
                         TransactionalOperator tx,
                         ObjectMapper om) {
@@ -64,6 +68,7 @@ public class ProductService {
                 this.appUserRepository = appUserRepository;
                 this.jobService = jobService;
                 this.gcs = gcs;
+                this.contentRepo = contentRepo;
                 this.projectRepository = projectRepository;
                 this.tx = tx;
                 this.om = om;
@@ -293,87 +298,69 @@ public class ProductService {
                                                                                         "Project does not belong to this product"));
                                                                 }
 
-                                                                // [New] 베이스 이미지 업데이트 (필수 파라미터로 받았으므로 바로 적용)
+                                                                // 베이스 이미지 검증
                                                                 if (baseImageUrl == null || baseImageUrl.isBlank()) {
                                                                         return Mono.error(ApiException.of(
                                                                                         ErrorCode.VALIDATION_FAILED,
                                                                                         "Base image URL is required"));
                                                                 }
-                                                                project.applyBaseImage(baseImageUrl);
 
                                                                 String objectBase = "mockuptmp/" + UUID.randomUUID();
 
                                                                 // 2. GCS 업로드 (트랜잭션 외부)
                                                                 return gcs.storeFixed(file, objectBase)
                                                                                 .flatMap(stored -> {
-                                                                                        // [Refactor] Content 생성 로직 제거
-                                                                                        // -> Project 직접 업데이트
-                                                                                        project.applyDieline(
-                                                                                                        stored.gsUri());
+                                                                                        // Content 엔티티 생성
+                                                                                        Content content = Content.builder()
+                                                                                                        .companyId(principal.companyId())
+                                                                                                        .productId(productId)
+                                                                                                        .projectId(projectId)
+                                                                                                        .title(project.getTitle())
+                                                                                                        .mockupImgUrl(stored.gsUri()) // 원본 도면
+                                                                                                        .gcsImgUrl(null) // 생성된 목업은 아직 없음
+                                                                                                        .status("DRAFT")
+                                                                                                        .contentType("MOCKUP")
+                                                                                                        .viewCount(0L)
+                                                                                                        .likeCount(0L)
+                                                                                                        .shareCount(0L)
+                                                                                                        .createdBy(principal.userId())
+                                                                                                        .createdAt(LocalDateTime.now())
+                                                                                                        .updatedAt(LocalDateTime.now())
+                                                                                                        .build();
 
-                                                                                        ObjectNode payload = om
-                                                                                                        .createObjectNode();
-                                                                                        payload.put("inputUri",
-                                                                                                        stored.gsUri());
-                                                                                        // [New] 프로젝트 ID 추가 (JobResult
-                                                                                        // 처리용 필수값)
-                                                                                        payload.put("projectId",
-                                                                                                        projectId);
-                                                                                        // [New] 베이스 이미지 추가 (업데이트된 값 사용)
-                                                                                        payload.put("baseImageUri",
-                                                                                                        project.getUserImgGcsUrl());
+                                                                                        ObjectNode payload = om.createObjectNode();
+                                                                                        payload.put("inputUri", stored.gsUri());
+                                                                                        payload.put("baseImageUri", baseImageUrl);
 
                                                                                         CreateJobRequest jobReq = new CreateJobRequest(
-                                                                                                        JobType.DIELINE,
-                                                                                                        payload);
+                                                                                                        JobType.DIELINE, payload);
 
-                                                                                        // 3. DB 트랜잭션 (Project 저장 -> Job
-                                                                                        // 요청)
+                                                                                        // 3. DB 트랜잭션 (Content 저장 -> Job 요청)
                                                                                         return tx.transactional(
-                                                                                                        projectRepository
-                                                                                                                        .save(project)
-                                                                                                                        .flatMap(savedProject -> {
-                                                                                                                                // [Refactor]
-                                                                                                                                // contentId
-                                                                                                                                // ->
-                                                                                                                                // projectId
-                                                                                                                                // 사용
-                                                                                                                                // jobService.requestJob
-                                                                                                                                // 호출
-                                                                                                                                // 시
-                                                                                                                                // traceId는
-                                                                                                                                // null로
-                                                                                                                                // 전달
-                                                                                                                                // (현재
-                                                                                                                                // 컨텍스트상)
+                                                                                                        contentRepo.save(content)
+                                                                                                                        .flatMap(savedContent -> {
+                                                                                                                                payload.put("contentId",
+                                                                                                                                                savedContent.getId());
                                                                                                                                 return jobService
-                                                                                                                                                .requestJob(
-                                                                                                                                                                projectId,
+                                                                                                                                                .requestJob(projectId,
                                                                                                                                                                 jobReq,
                                                                                                                                                                 null)
                                                                                                                                                 .map(jobId -> new com.example.chillgram.domain.product.dto.PackageMockupResponse(
                                                                                                                                                                 jobId,
-                                                                                                                                                                savedProject.getId(),
+                                                                                                                                                                savedContent.getId(),
                                                                                                                                                                 stored.fileUrl()));
                                                                                                                         }))
-                                                                                                        // 4.
-                                                                                                        // 보상(Compensation):
-                                                                                                        // DB 트랜잭션 실패 시
-                                                                                                        // GCS 업로드 취소
+                                                                                                        // 4. 보상(Compensation): DB 트랜잭션 실패 시 GCS 업로드 취소
                                                                                                         .onErrorResume(err -> {
                                                                                                                 log.error("Failed to request package mockup job. Compensating by deleting GCS object: {}",
-                                                                                                                                stored.gsUri(),
-                                                                                                                                err);
-                                                                                                                return gcs.delete(
-                                                                                                                                stored.gsUri())
+                                                                                                                                stored.gsUri(), err);
+                                                                                                                return gcs.delete(stored.gsUri())
                                                                                                                                 .onErrorResume(delErr -> {
                                                                                                                                         log.warn("Failed to clean up GCS object after transaction failure: {}",
-                                                                                                                                                        stored.gsUri(),
-                                                                                                                                                        delErr);
+                                                                                                                                                        stored.gsUri(), delErr);
                                                                                                                                         return Mono.empty();
                                                                                                                                 })
-                                                                                                                                .then(Mono.error(
-                                                                                                                                                err));
+                                                                                                                                .then(Mono.error(err));
                                                                                                         });
                                                                                 });
                                                         });
