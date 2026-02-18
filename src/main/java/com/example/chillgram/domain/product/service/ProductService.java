@@ -297,6 +297,12 @@ public class ProductService {
                                                                                                                          // 목업은
                                                                                                                          // 아직
                                                                                                                          // 없음
+                                                                                                        .title((project.getTitle() != null
+                                                                                                                        && !project.getTitle()
+                                                                                                                                        .isBlank()
+                                                                                                                                                        ? project.getTitle()
+                                                                                                                                                        : "Untitled Project")
+                                                                                                                        + " · 패키지 시안")
                                                                                                         .status("PENDING")
                                                                                                         .contentType("IMAGE")
                                                                                                         .createdBy(principal
@@ -357,6 +363,8 @@ public class ProductService {
                                                                                                                         savedContent.getId(),
                                                                                                                         stored.fileUrl()))))
                                                                                                         // 4.
+
+                                                                                                        //
                                                                                                         // 보상(Compensation):
                                                                                                         // DB 트랜잭션 실패 시
                                                                                                         // GCS 업로드 취소
