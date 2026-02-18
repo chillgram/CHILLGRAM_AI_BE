@@ -11,17 +11,17 @@ public interface ProjectRepository extends R2dbcRepository<Project, Long> {
     Flux<Project> findAllByProductId(Long productId);
 
     @Query("""
-            SELECT p.project_id AS projectId,
-                   p.title AS title,
-                   p.project_type AS projectType,
-                   p.status AS status,
-                   p.ad_message_focus AS adMessageFocus,
-                   p.ad_message_target AS adMessageTarget,
-                   p.created_at AS createdAt,
-                   p.userimg_gcs_url AS userImgGcsUrl,
-                   p.dieline_gcs_url AS dielineGcsUrl,
-                   p.mockup_result_url AS mockupResultUrl,
-                   COALESCE(cnt.content_count, 0) AS contentCount
+            SELECT p.project_id,
+                   p.title,
+                   p.project_type,
+                   p.status,
+                   p.ad_message_focus,
+                   p.ad_message_target,
+                   p.created_at,
+                   p.userimg_gcs_url AS user_img_gcs_url,
+                   p.dieline_gcs_url,
+                   p.mockup_result_url,
+                   COALESCE(cnt.content_count, 0) AS content_count
               FROM project p
               LEFT JOIN (SELECT project_id, count(*) AS content_count
                            FROM content
