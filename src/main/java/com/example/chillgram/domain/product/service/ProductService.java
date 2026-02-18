@@ -272,7 +272,7 @@ public class ProductService {
          */
 
         public Mono<com.example.chillgram.domain.product.dto.PackageMockupResponse> addPackageMockup(long productId,
-                        long projectId, FilePart file, AuthPrincipal principal) {
+                        long projectId, String baseImageUrl, FilePart file, AuthPrincipal principal) {
                 return productRepository.findById(productId)
                                 .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.NOT_FOUND, "product not found")))
                                 .flatMap(product -> {
@@ -293,14 +293,13 @@ public class ProductService {
                                                                                         "Project does not belong to this product"));
                                                                 }
 
-                                                                // [New] 베이스 이미지 검증
-                                                                if (project.getUserImgGcsUrl() == null
-                                                                                || project.getUserImgGcsUrl()
-                                                                                                .isBlank()) {
+                                                                // [New] 베이스 이미지 업데이트 (필수 파라미터로 받았으므로 바로 적용)
+                                                                if (baseImageUrl == null || baseImageUrl.isBlank()) {
                                                                         return Mono.error(ApiException.of(
                                                                                         ErrorCode.VALIDATION_FAILED,
-                                                                                        "Project base image (userImgGcsUrl) is missing"));
+                                                                                        "Base image URL is required"));
                                                                 }
+                                                                project.applyBaseImage(baseImageUrl);
 
                                                                 String objectBase = "mockuptmp/" + UUID.randomUUID();
 
@@ -320,7 +319,7 @@ public class ProductService {
                                                                                         // 처리용 필수값)
                                                                                         payload.put("projectId",
                                                                                                         projectId);
-                                                                                        // [New] 베이스 이미지 추가
+                                                                                        // [New] 베이스 이미지 추가 (업데이트된 값 사용)
                                                                                         payload.put("baseImageUri",
                                                                                                         project.getUserImgGcsUrl());
 

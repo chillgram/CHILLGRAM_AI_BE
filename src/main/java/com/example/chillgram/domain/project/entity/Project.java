@@ -79,6 +79,11 @@ public class Project {
         this.updatedAt = LocalDateTime.now();
     }
 
+    public void applyBaseImage(String url) {
+        this.userImgGcsUrl = url;
+        this.updatedAt = LocalDateTime.now();
+    }
+
     public enum ProjectType {
         AD, // 광고
         DESIGN // 도안

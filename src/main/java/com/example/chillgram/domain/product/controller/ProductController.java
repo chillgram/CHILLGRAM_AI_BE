@@ -22,7 +22,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.codec.multipart.FilePart;
-import java.util.UUID;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -103,6 +102,7 @@ public class ProductController {
     public Mono<com.example.chillgram.domain.product.dto.PackageMockupResponse> addPackage(
             @Parameter(description = "제품 ID", required = true) @PathVariable Long id,
             @Parameter(description = "프로젝트 ID", required = true) @RequestParam Long projectId,
+            @Parameter(description = "베이스 이미지 URL (Basic에서 선택)", required = true) @RequestParam String baseImageUrl,
             @RequestPart("file") FilePart file,
             @AuthenticationPrincipal AuthPrincipal principal) {
 
@@ -110,7 +110,7 @@ public class ProductController {
             throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보가 없습니다.");
         }
 
-        return productService.addPackageMockup(id, projectId, file, principal);
+        return productService.addPackageMockup(id, projectId, baseImageUrl, file, principal);
     }
 
 }
