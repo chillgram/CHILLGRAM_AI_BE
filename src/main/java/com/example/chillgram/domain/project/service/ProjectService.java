@@ -17,7 +17,6 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-@Transactional(readOnly = true)
 public class ProjectService {
 
         private final ProjectRepository projectRepository;
@@ -25,13 +24,22 @@ public class ProjectService {
         private final ProductRepository productRepository;
 
         /**
-         * 제품의 프로젝트 목록 조회 (Content 개수 포함)
+         * 제품의 프로젝트 목록 조회 (Optimized: Single query for counts)
          */
         public Mono<List<ProjectResponse>> getProjectsByProduct(Long productId) {
-                return projectRepository.findAllByProductId(productId)
-                                .flatMap(project -> contentRepository.countByProjectId(project.getId())
-                                                .defaultIfEmpty(0L)
-                                                .map(count -> ProjectResponse.of(project, count)))
+                return projectRepository.findAllByProductIdWithCount(productId)
+                                .map(pc -> new ProjectResponse(
+                                                pc.projectId(),
+                                                pc.title(),
+                                                pc.projectType() != null ? pc.projectType().name() : null,
+                                                pc.status(),
+                                                pc.adMessageFocus(),
+                                                pc.adMessageTarget(),
+                                                pc.contentCount(),
+                                                pc.createdAt(),
+                                                pc.userImgGcsUrl(),
+                                                pc.dielineGcsUrl(),
+                                                pc.mockupResultUrl()))
                                 .collectList();
         }
 

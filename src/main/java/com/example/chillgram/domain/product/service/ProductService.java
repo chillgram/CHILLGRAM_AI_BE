@@ -39,7 +39,6 @@ import lombok.extern.slf4j.Slf4j;
 
 @Service
 @Slf4j
-@Transactional(readOnly = true)
 public class ProductService {
 
         private final ProductRepository productRepository;
@@ -128,10 +127,12 @@ public class ProductService {
                                                                                 ProductResponse res = ProductResponse
                                                                                                 .from(product);
                                                                                 res.setCompanyName(companyNames
-                                                                                                .getOrDefault(product.getCompanyId(),
+                                                                                                .getOrDefault(product
+                                                                                                                .getCompanyId(),
                                                                                                                 "Unknown"));
                                                                                 res.setCreatedByName(userNames
-                                                                                                .getOrDefault(product.getCreatedBy(),
+                                                                                                .getOrDefault(product
+                                                                                                                .getCreatedBy(),
                                                                                                                 "Unknown"));
                                                                                 return res;
                                                                         }).toList();
