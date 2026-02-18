@@ -297,6 +297,12 @@ public class ProductService {
                                                                                                                          // 목업은
                                                                                                                          // 아직
                                                                                                                          // 없음
+                                                                                                        .title((project.getTitle() != null
+                                                                                                                        && !project.getTitle()
+                                                                                                                                        .isBlank()
+                                                                                                                                                        ? project.getTitle()
+                                                                                                                                                        : "Untitled Project")
+                                                                                                                        + " · 패키지 시안")
                                                                                                         .status("PENDING")
                                                                                                         .contentType("IMAGE")
                                                                                                         .createdBy(principal
