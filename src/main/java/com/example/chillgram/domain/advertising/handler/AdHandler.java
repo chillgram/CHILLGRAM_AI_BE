@@ -11,6 +11,7 @@ import com.example.chillgram.domain.ai.dto.AdCopiesRequest;
 import com.example.chillgram.common.security.AuthPrincipal;
 import com.example.chillgram.domain.qa.handler.QaHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.http.codec.multipart.FormFieldPart;
@@ -23,6 +24,7 @@ import reactor.core.publisher.Mono;
 /**
  * 역할: 광고 관련 HTTP 요청 처리
  */
+@Slf4j
 @Component
 public class AdHandler {
 
@@ -86,40 +88,38 @@ public class AdHandler {
         long productId = Long.parseLong(req.pathVariable("id"));
         Mono<Long> userIdMono = extractUserId(req);
 
-        return userIdMono.flatMap(userId ->
-                req.multipartData().flatMap(parts -> {
+        return userIdMono.flatMap(userId -> req.multipartData().flatMap(parts -> {
 
-                    Part payloadPart = parts.getFirst("payload");
+            Part payloadPart = parts.getFirst("payload");
 
-                    if (!(payloadPart instanceof FormFieldPart p)) {
-                        return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "payload part required"));
-                    }
+            if (!(payloadPart instanceof FormFieldPart p)) {
+                return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "payload part required"));
+            }
 
-                    AdCreateRequest body;
-                    try {
-                        body = objectMapper.readValue(p.value(), AdCreateRequest.class);
-                    } catch (Exception e) {
-                        return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "invalid payload json"));
-                    }
+            AdCreateRequest body;
+            try {
+                body = objectMapper.readValue(p.value(), AdCreateRequest.class);
+            } catch (Exception e) {
+                return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "invalid payload json"));
+            }
 
-                    // 수동 Validation 수행
-                    var violations = validator.validate(body);
-                    if (!violations.isEmpty()) {
-                        String errorMsg = violations.stream()
-                                .map(v -> v.getPropertyPath() + ": " + v.getMessage())
-                                .reduce((m1, m2) -> m1 + ", " + m2)
-                                .orElse("Validation failed");
-                        return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, errorMsg));
-                    }
+            // 수동 Validation 수행
+            var violations = validator.validate(body);
+            if (!violations.isEmpty()) {
+                String errorMsg = violations.stream()
+                        .map(v -> v.getPropertyPath() + ": " + v.getMessage())
+                        .reduce((m1, m2) -> m1 + ", " + m2)
+                        .orElse("Validation failed");
+                return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, errorMsg));
+            }
 
-                    if (body.selectedProductImage().url()== null) {
-                        return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "base img url is required"));
-                    }
+            if (body.selectedProductImage().url() == null) {
+                return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "base img url is required"));
+            }
 
-                    return adService.createProjectAndContents(productId, userId, body)
-                            .flatMap(result -> ServerResponse.ok().bodyValue(result));
-                })
-        );
+            return adService.createProjectAndContents(productId, userId, body)
+                    .flatMap(result -> ServerResponse.ok().bodyValue(result));
+        }));
     }
 
     public Mono<ServerResponse> createAdLog(ServerRequest req) {
@@ -137,7 +137,9 @@ public class AdHandler {
                         .flatMap(body -> adService.saveAdGenerationLog(productId, body, userId))
                         .flatMap(logId -> ServerResponse.ok()
                                 .contentType(MediaType.APPLICATION_JSON)
-                                .bodyValue(java.util.Map.of("success", true, "logId", logId))));
+                                .bodyValue(java.util.Map.of("success", true, "logId", logId)))
+                        .doOnError(
+                                ex -> log.error("createAdLog failed. productId={}, userId={}", productId, userId, ex)));
     }
 
     /**

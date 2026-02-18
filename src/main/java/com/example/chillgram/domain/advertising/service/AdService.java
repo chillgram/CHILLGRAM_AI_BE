@@ -140,46 +140,48 @@ public class AdService {
                                                                 ex.getMessage()));
         }
 
-    public Mono<AdCreateResponse> createProjectAndContents(long productId, long userId, AdCreateRequest req) {
+        public Mono<AdCreateResponse> createProjectAndContents(long productId, long userId, AdCreateRequest req) {
 
-        return productRepository.existsById(productId)
-                .flatMap(exists -> exists
-                        ? Mono.empty()
-                        : Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND, "product not found")))
-                .then(adCreateRepository.findCompanyIdByProductId(productId))
-                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND, "company not found by productId")))
-                .flatMap(companyId -> {
-                    String userImgUrl = req.selectedProductImage() != null ? req.selectedProductImage().url() : null;
+                return productRepository.existsById(productId)
+                                .flatMap(exists -> exists
+                                                ? Mono.empty()
+                                                : Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND,
+                                                                "product not found")))
+                                .then(adCreateRepository.findCompanyIdByProductId(productId))
+                                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND,
+                                                "company not found by productId")))
+                                .flatMap(companyId -> {
+                                        String userImgUrl = req.selectedProductImage() != null
+                                                        ? req.selectedProductImage().url()
+                                                        : null;
 
-                    return adCreateRepository.insertProject(
-                                    companyId,
-                                    productId,
-                                    req.projectType(),
-                                    req.projectTitle(),
-                                    req.requestText(),
-                                    userId,
-                                    normalizeFocus(req.adFocus()),
-                                    req.adMessageTarget(),
-                                    userImgUrl
-                            )
-                            .flatMap(projectId ->
-                                    insertContents(companyId, productId, projectId, req, userId)
-                                            .collectList()
-                                            .map(contentIds -> new AdCreateResponse(projectId, contentIds, null))
-                            );
-                })
-                .flatMap(resp ->
-                        productRepository.findCategoryByProductId(productId)
-                                .defaultIfEmpty("0")
-                                .flatMap(cat -> {
-                                    AdCreateResponse respWithCat = new AdCreateResponse(resp.projectId(), resp.contentIds(), cat);
-
-                                    return publishJobs(productId, userId, req, respWithCat)
-                                            .thenReturn(respWithCat);
+                                        return adCreateRepository.insertProject(
+                                                        companyId,
+                                                        productId,
+                                                        req.projectType(),
+                                                        req.projectTitle(),
+                                                        req.requestText(),
+                                                        userId,
+                                                        normalizeFocus(req.adFocus()),
+                                                        req.adMessageTarget(),
+                                                        userImgUrl)
+                                                        .flatMap(projectId -> insertContents(companyId, productId,
+                                                                        projectId, req, userId)
+                                                                        .collectList()
+                                                                        .map(contentIds -> new AdCreateResponse(
+                                                                                        projectId, contentIds, null)));
                                 })
-                )
-                .as(tx::transactional);
-    }
+                                .flatMap(resp -> productRepository.findCategoryByProductId(productId)
+                                                .defaultIfEmpty("0")
+                                                .flatMap(cat -> {
+                                                        AdCreateResponse respWithCat = new AdCreateResponse(
+                                                                        resp.projectId(), resp.contentIds(), cat);
+
+                                                        return publishJobs(productId, userId, req, respWithCat)
+                                                                        .thenReturn(respWithCat);
+                                                }))
+                                .as(tx::transactional);
+        }
 
         /**
          * content 개수만큼 jobService.requestJob 호출(= outbox 발행)
@@ -210,14 +212,19 @@ public class AdService {
                                         payload.put("contentId", contentId);
                                         payload.put("productName", req.productName());
                                         payload.put("guideLine", req.selectedGuide());
-                                        payload.put("typoText", req.selectedCopy().body() == null ? "" : req.selectedCopy().body());
-                                        payload.put("baseImageUrl", req.selectedProductImage() != null ? req.selectedProductImage().url() : "");
+                                        payload.put("typoText", req.selectedCopy().body() == null ? ""
+                                                        : req.selectedCopy().body());
+                                        payload.put("baseImageUrl",
+                                                        req.selectedProductImage() != null
+                                                                        ? req.selectedProductImage().url()
+                                                                        : "");
                                         payload.put("bannerSize", req.bannerSize() == null ? "" : req.bannerSize());
-                                        payload.put("adMessageTarget", req.adMessageTarget() == null ? 0 : req.adMessageTarget());
+                                        payload.put("adMessageTarget",
+                                                        req.adMessageTarget() == null ? 0 : req.adMessageTarget());
                                         payload.put("category", resp.category());
 
                                         if (jobType == JobEnums.JobType.BANNER) {
-                                            payload.put("bannerRatio", bannerRatio);
+                                                payload.put("bannerRatio", bannerRatio);
                                         }
                                         // ✅ 핵심: 배너만 ratio idx를 큐 payload에 실어야 워커가 그대로 사용 가능
                                         if (jobType == JobEnums.JobType.BANNER) {
@@ -306,6 +313,8 @@ public class AdService {
                                                 : Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND,
                                                                 "product not found")))
                                 .then(adCreateRepository.findCompanyIdByProductId(productId))
+                                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND,
+                                                "Company not found for product: " + productId)))
                                 .flatMap(companyId -> {
                                         String finalCopyJson = "{}";
                                         String guidelineJson = "{}";
@@ -323,7 +332,10 @@ public class AdService {
                                                         productId,
                                                         finalCopyJson,
                                                         guidelineJson,
-                                                        req.selectionReason());
+                                                        req.selectionReason())
+                                                        .doOnError(ex -> log.error(
+                                                                        "Failed to save ad gen log. companyId={}, userId={}, productId={}",
+                                                                        companyId, userId, productId, ex));
                                 });
         }
 

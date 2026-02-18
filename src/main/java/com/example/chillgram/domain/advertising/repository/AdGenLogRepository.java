@@ -17,16 +17,16 @@ public class AdGenLogRepository {
             String selectionReason) {
         return db
                 .sql("""
-                        INSERT INTO ad_gen_log (company_id, user_id, product_id, ad_copy, guideline, selection_reason, created_at)
-                        VALUES (:companyId, :userId, :productId, :adCopy, :guideline, :selectionReason, NOW())
+                        INSERT INTO ad_generation_log (company_id, user_id, product_id, ad_copy, guideline, selection_reason, created_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, NOW())
                         RETURNING log_id
                         """)
-                .bind("companyId", companyId)
-                .bind("userId", userId)
-                .bind("productId", productId)
-                .bind("adCopy", adCopy == null ? "" : adCopy)
-                .bind("guideline", guideline == null ? "" : guideline)
-                .bind("selectionReason", selectionReason == null ? "" : selectionReason)
+                .bind(0, companyId)
+                .bind(1, userId)
+                .bind(2, productId)
+                .bind(3, adCopy == null ? "" : adCopy)
+                .bind(4, guideline == null ? "" : guideline)
+                .bind(5, selectionReason == null ? "" : selectionReason)
                 .map((row, meta) -> row.get("log_id", Long.class))
                 .one();
     }
