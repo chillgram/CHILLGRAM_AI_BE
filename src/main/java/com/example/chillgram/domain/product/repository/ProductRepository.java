@@ -31,7 +31,7 @@ public interface ProductRepository extends R2dbcRepository<Product, Long> {
 
         // Optimized Query (N+1 Solve)
         @org.springframework.data.r2dbc.repository.Query("""
-                            SELECT p.product_id AS id,
+                            SELECT p.product_id,
                                    p.company_id,
                                    p.name,
                                    p.category,
@@ -53,7 +53,7 @@ public interface ProductRepository extends R2dbcRepository<Product, Long> {
         Flux<ProductWithDetails> findAllWithDetails(Long companyId, int limit, long offset);
 
         record ProductWithDetails(
-                        Long id,
+                        Long productId,
                         Long companyId,
                         String name,
                         String category,

@@ -116,7 +116,7 @@ public class ProductService {
                                                         .findAllWithDetails(companyId, pageable.getPageSize(),
                                                                         pageable.getOffset())
                                                         .map(details -> ProductResponse.builder()
-                                                                        .id(details.id())
+                                                                        .id(details.productId())
                                                                         .companyId(details.companyId())
                                                                         .name(details.name())
                                                                         .category(details.category())
