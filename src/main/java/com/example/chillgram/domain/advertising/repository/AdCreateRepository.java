@@ -27,7 +27,6 @@ public class AdCreateRepository {
                 .one();
     }
 
-    // project insert + project_id 반환
     public Mono<Long> insertProject(long companyId, long productId, String projectType, String title, String desc,
             long createdBy, Integer focus, Integer target, String userImgGcsUrl) {
         var spec = db.sql("""
@@ -57,8 +56,6 @@ public class AdCreateRepository {
         return spec.map((r, m) -> r.get("project_id", Long.class)).one();
     }
 
-    // content insert + content_id 반환
-    // content insert + content_id 반환
     public Mono<Long> insertContent(long companyId, long productId, long projectId,
             String contentType, String platform,
             String title, String body, String tags,

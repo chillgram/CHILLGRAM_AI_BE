@@ -9,7 +9,5 @@ public interface ContentRepository extends R2dbcRepository<Content, Long> {
 
     Flux<Content> findByProjectIdOrderByCreatedAtDesc(Long projectId);
 
-    Flux<Content> findByProductIdOrderByCreatedAtDesc(Long productId);
-
     Mono<Long> countByProjectId(Long projectId);
 }

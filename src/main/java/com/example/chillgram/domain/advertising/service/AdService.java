@@ -1,9 +1,7 @@
 package com.example.chillgram.domain.advertising.service;
 
-import lombok.extern.slf4j.Slf4j;
 import com.example.chillgram.common.exception.ApiException;
 import com.example.chillgram.common.exception.ErrorCode;
-import com.example.chillgram.common.google.FileStorage;
 import com.example.chillgram.domain.advertising.dto.*;
 import com.example.chillgram.domain.advertising.dto.jobs.CreateJobRequest;
 import com.example.chillgram.domain.advertising.dto.jobs.JobEnums;
@@ -20,6 +18,7 @@ import com.example.chillgram.domain.project.repository.ProjectRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.reactive.TransactionalOperator;
 import reactor.core.publisher.Flux;
@@ -33,264 +32,301 @@ import java.util.List;
 @Slf4j
 public class AdService {
 
-        private final ProductRepository productRepository;
-        private final ProjectRepository projectRepository;
-        private final EventCalendarRepository eventCalendarRepository;
-        private final AdCreateRepository adCreateRepository;
-        private final TrendRuleEngine trendEngine;
-        private final AdCopyService adCopyService;
-        private final TransactionalOperator tx;
-        private final JobService jobService;
-        private final ObjectMapper objectMapper;
+    private final ProductRepository productRepository;
+    private final ProjectRepository projectRepository;
+    private final EventCalendarRepository eventCalendarRepository;
+    private final AdCreateRepository adCreateRepository;
+    private final TrendRuleEngine trendEngine;
+    private final AdCopyService adCopyService;
+    private final TransactionalOperator tx;
+    private final JobService jobService;
+    private final ObjectMapper objectMapper;
 
-        private final AdGenLogRepository adGenLogRepository;
+    private final AdGenLogRepository adGenLogRepository;
 
-        public AdService(
-                        ProductRepository productRepository,
-                        ProjectRepository projectRepository,
-                        EventCalendarRepository eventCalendarRepository,
-                        AdCreateRepository adCreateRepository,
-                        TrendRuleEngine trendEngine,
-                        AdCopyService adCopyService,
-                        TransactionalOperator tx,
-                        JobService jobService,
-                        ObjectMapper objectMapper,
-                        AdGenLogRepository adGenLogRepository
-        ) {
-                this.productRepository = productRepository;
-                this.projectRepository = projectRepository;
-                this.eventCalendarRepository = eventCalendarRepository;
-                this.adCreateRepository = adCreateRepository;
-                this.trendEngine = trendEngine;
-                this.adCopyService = adCopyService;
-                this.tx = tx;
-                this.jobService = jobService;
-                this.objectMapper = objectMapper;
-                this.adGenLogRepository = adGenLogRepository;
-                log.info("AdService initialized");
+    public AdService(
+                    ProductRepository productRepository,
+                    ProjectRepository projectRepository,
+                    EventCalendarRepository eventCalendarRepository,
+                    AdCreateRepository adCreateRepository,
+                    TrendRuleEngine trendEngine,
+                    AdCopyService adCopyService,
+                    TransactionalOperator tx,
+                    JobService jobService,
+                    ObjectMapper objectMapper,
+                    AdGenLogRepository adGenLogRepository
+    ) {
+            this.productRepository = productRepository;
+            this.projectRepository = projectRepository;
+            this.eventCalendarRepository = eventCalendarRepository;
+            this.adCreateRepository = adCreateRepository;
+            this.trendEngine = trendEngine;
+            this.adCopyService = adCopyService;
+            this.tx = tx;
+            this.jobService = jobService;
+            this.objectMapper = objectMapper;
+            this.adGenLogRepository = adGenLogRepository;
+            log.info("AdService initialized");
+    }
+
+    private Mono<Product> requireProduct(long productId) {
+            return productRepository.findById(productId)
+                            .switchIfEmpty(Mono.error(ApiException.of(
+                                            ErrorCode.AD_PRODUCT_NOT_FOUND, "product not found id=" + productId)));
+    }
+
+    public Mono<AdTrendsResponse> getAdTrends(long productId, LocalDate baseDate) {
+            final LocalDate date = (baseDate != null) ? baseDate : LocalDate.now();
+
+            Mono<Void> ensureProductExists = productRepository.existsById(productId)
+                            .flatMap(exists -> exists
+                                            ? Mono.empty()
+                                            : Mono.error(ApiException.of(
+                                                            ErrorCode.AD_PRODUCT_NOT_FOUND,
+                                                            "product not found id=" + productId)));
+
+            return ensureProductExists.then(
+                            eventCalendarRepository.findNearest(date, 5)
+                                            .collectList()
+                                            .map(events -> {
+                                                    var r = trendEngine.analyze(productId, date, events);
+
+                                                    var dtoKeywords = r.trendKeywords().stream()
+                                                                    .map(k -> new AdTrendsResponse.TrendKeyword(
+                                                                                    k.name(), k.description()))
+                                                                    .toList();
+
+                                                    return new AdTrendsResponse(
+                                                                    productId,
+                                                                    date,
+                                                                    dtoKeywords,
+                                                                    r.hashtags(),
+                                                                    r.styleSummary());
+                                            }));
+    }
+
+    public Mono<AdGuidesResponse> createAdGuides(long productId, AdGuidesRequest req) {
+            final LocalDate date = (req.baseDate() != null) ? req.baseDate() : LocalDate.now();
+
+            Mono<Product> productMono = requireProduct(productId);
+            Mono<AdTrendsResponse> trendsMono = getAdTrends(productId, date);
+
+            return Mono.zip(productMono, trendsMono)
+                            .flatMap(tuple -> {
+                                    Product product = tuple.getT1();
+                                    AdTrendsResponse trends = tuple.getT2();
+
+                                    AdGuideAiRequest aiReq = AdGuideAiRequest.from(productId, product, date, req,
+                                                    trends);
+
+                                    return adCopyService.generateAdGuidesMono(aiReq);
+                            })
+                            .onErrorMap(ex -> (ex instanceof ApiException) ? ex
+                                            : ApiException.of(ErrorCode.AD_GUIDE_GENERATION_FAILED,
+                                                            ex.getMessage()));
+    }
+
+    public Mono<FinalCopyResponse> createAdCopies(long productId, FinalCopyRequest req) {
+            if (req.selectedGuideline() == null || req.selectedGuideline().isEmpty()) {
+                    return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED,
+                                    "selectedGuideline is required"));
+            }
+            return productRepository.findById(productId)
+                            .switchIfEmpty(Mono.error(
+                                            ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND,
+                                                            "product not found id=" + productId)))
+                            .flatMap(product -> Mono.fromCallable(() -> {
+                                    return adCopyService.generateFinalCopies(req);
+                            })
+                                            .subscribeOn(Schedulers.boundedElastic()))
+                            .onErrorMap(ex -> (ex instanceof ApiException) ? ex
+                                            : ApiException.of(ErrorCode.AD_COPY_GENERATION_FAILED,
+                                                            ex.getMessage()));
+    }
+
+    public Mono<AdCreateResponse> createProjectAndContents(long productId, long userId, AdCreateRequest req) {
+        // product 존재 확인
+        Mono<AdCreateResponse> saved = productRepository.existsById(productId)
+                .flatMap(exists -> exists ? Mono.empty() : Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND,"product not found")))
+                .then(adCreateRepository.findCompanyIdByProductId(productId))
+                .switchIfEmpty(Mono.error(ApiException.of(
+                        ErrorCode.AD_PRODUCT_NOT_FOUND,
+                        "company not found by productId")))
+                // Project + Content 저장
+                .flatMap(companyId -> {
+                    // BASIC에서 선택한 이미지 URL을 project에 저장
+                    String userImgUrl = req.selectedProductImage() != null ? req.selectedProductImage().url() : null;
+
+                    return adCreateRepository.insertProject(companyId, productId,
+                                    req.projectType(), req.projectTitle(), req.requestText(),
+                                    userId, normalizeFocus(req.adFocus()), req.adMessageTarget(), userImgUrl
+                            )
+                            .flatMap(projectId -> insertContents(companyId, productId, projectId, req, userId)
+                                            .collectList()
+                                            .map(contentIds -> new AdCreateResponse(projectId, contentIds, null))
+                            );
+                })
+                .as(tx::transactional);
+
+        // job 발행
+        return saved.flatMap(resp -> publishJobs(productId, userId, req, resp).thenReturn(resp));
+    }
+
+    /**
+     * content 개수만큼 jobService.requestJob 호출(= outbox 발행)
+     * - contentIds와 selectedTypes를 같은 index로 매칭
+     */
+    private Mono<Void> publishJobs(
+            long productId,
+            long userId,
+            AdCreateRequest req,
+            AdCreateResponse resp
+    ) {
+        List<Long> contentIds = resp.contentIds();
+        List<String> selectedTypes = req.selectedTypes();
+
+        int n = Math.min(contentIds.size(), selectedTypes.size());
+        if (n == 0) return Mono.empty();
+
+        return Flux.range(0, n)
+                .concatMap(i -> {
+                    long contentId = contentIds.get(i);
+                    String type = selectedTypes.get(i);
+
+                    JobEnums.JobType jobType = mapToJobType(type);
+
+                    ObjectNode payload = objectMapper.createObjectNode();
+                    payload.put("productId", productId);
+                    payload.put("projectId", resp.projectId());
+                    payload.put("contentId", contentId);
+                    payload.put("baseImageUrl", req.selectedProductImage() != null ? req.selectedProductImage().url() : "");
+                    payload.put("bannerSize", req.bannerSize() == null ? "" : req.bannerSize());
+                    payload.put("adMessageTarget", req.adMessageTarget() == null ? 0 : req.adMessageTarget());
+
+                    if (req.selectedCopy() != null) {
+                        payload.put("finalCopy", req.selectedCopy().body() == null ? "" : req.selectedCopy().body());
+                    }
+
+                    CreateJobRequest jobReq = new CreateJobRequest(jobType, payload);
+
+                    return jobService.requestJob(resp.projectId(), jobReq, null).then();
+                })
+                .then();
+    }
+
+    private JobEnums.JobType mapToJobType(String type) {
+        if (type == null || type.isBlank()) return JobEnums.JobType.SNS;
+        try {
+            return JobEnums.JobType.valueOf(type.trim().toUpperCase());
+        } catch (Exception e) {
+            return JobEnums.JobType.SNS;
         }
+    }
 
-        private Mono<Product> requireProduct(long productId) {
-                return productRepository.findById(productId)
-                                .switchIfEmpty(Mono.error(ApiException.of(
-                                                ErrorCode.AD_PRODUCT_NOT_FOUND, "product not found id=" + productId)));
+    private Flux<Long> insertContents(long companyId, long productId, long projectId, AdCreateRequest req, long userId) {
+
+        int bannerRatio = 0;
+        if (req.bannerSize() != null) {
+            if (req.bannerSize().contains("1:1")) bannerRatio = 1;
+            else if (req.bannerSize().contains("16:9")) bannerRatio = 2;
+            else if (req.bannerSize().contains("9:16")) bannerRatio = 3;
         }
+        int finalBannerRatio = bannerRatio;
 
-        public Mono<AdTrendsResponse> getAdTrends(long productId, LocalDate baseDate) {
-                final LocalDate date = (baseDate != null) ? baseDate : LocalDate.now();
+        return Flux.fromIterable(req.selectedTypes())
+                .concatMap(type -> {
 
-                Mono<Void> ensureProductExists = productRepository.existsById(productId)
-                                .flatMap(exists -> exists
-                                                ? Mono.empty()
-                                                : Mono.error(ApiException.of(
-                                                                ErrorCode.AD_PRODUCT_NOT_FOUND,
-                                                                "product not found id=" + productId)));
+                    JobEnums.JobType jobType = mapToJobType(type); // valueOf 기반 추천
+                    String contentType = jobType.name();
+                    String platform = switch (jobType) {
+                        case VIDEO -> "YOUTUBE";
+                        case SNS, BANNER -> "INSTAGRAM";
+                        default -> "INSTAGRAM";
+                    };
 
-                return ensureProductExists.then(
-                                eventCalendarRepository.findNearest(date, 5)
-                                                .collectList()
-                                                .map(events -> {
-                                                        var r = trendEngine.analyze(productId, date, events);
+                    // 배너만 ratio 저장, 나머지는 0
+                    Integer ratioToSave = (jobType == JobEnums.JobType.BANNER) ? finalBannerRatio : 0;
 
-                                                        var dtoKeywords = r.trendKeywords().stream()
-                                                                        .map(k -> new AdTrendsResponse.TrendKeyword(
-                                                                                        k.name(), k.description()))
-                                                                        .toList();
+                    return adCreateRepository.insertContent(
+                            companyId,
+                            productId,
+                            projectId,
+                            contentType,          // 🔥 여기!
+                            platform,
+                            req.projectTitle(),
+                            req.selectedCopy() != null ? req.selectedCopy().body() : "",
+                            req.selectedKeywords() != null && !req.selectedKeywords().isEmpty()
+                                    ? String.join(",", req.selectedKeywords())
+                                    : null,
+                            userId,
+                            ratioToSave
+                    );
+                });
+    }
 
-                                                        return new AdTrendsResponse(
-                                                                        productId,
-                                                                        date,
-                                                                        dtoKeywords,
-                                                                        r.hashtags(),
-                                                                        r.styleSummary());
-                                                }));
-        }
+    public Mono<Long> saveAdGenerationLog(long productId, AdGenLogRequest req, long userId) {
+            return productRepository.existsById(productId)
+                            .flatMap(exists -> exists ? Mono.empty()
+                                            : Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND,
+                                                            "product not found")))
+                            .then(adCreateRepository.findCompanyIdByProductId(productId))
+                            .flatMap(companyId -> {
+                                    String finalCopyJson = "{}";
+                                    String guidelineJson = "{}";
+                                    try {
+                                            finalCopyJson = objectMapper.writeValueAsString(req.finalCopy());
+                                            guidelineJson = objectMapper.writeValueAsString(req.guideline());
+                                    } catch (JsonProcessingException e) {
+                                            finalCopyJson = String.valueOf(req.finalCopy());
+                                            guidelineJson = String.valueOf(req.guideline());
+                                    }
 
-        public Mono<AdGuidesResponse> createAdGuides(long productId, AdGuidesRequest req) {
-                final LocalDate date = (req.baseDate() != null) ? req.baseDate() : LocalDate.now();
+                                    return adGenLogRepository.save(
+                                                    companyId,
+                                                    userId,
+                                                    productId,
+                                                    finalCopyJson,
+                                                    guidelineJson,
+                                                    req.selectionReason());
+                            });
+    }
 
-                Mono<Product> productMono = requireProduct(productId);
-                Mono<AdTrendsResponse> trendsMono = getAdTrends(productId, date);
+    public Mono<AdGuideResponse> generateAdGuides(Long projectId, AdGuideRequest request, Long companyId) {
+            return projectRepository.findById(projectId)
+                            .filter(p -> p.getCompanyId().equals(companyId))
+                            .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.PROJECT_NOT_FOUND,
+                                            "Project not found: " + projectId)))
+                            .flatMap(project -> productRepository.findById(project.getProductId())
+                                            .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND,
+                                                            "Product not found")))
+                                            .flatMap(product -> {
+                                                    AdGuideAiRequest aiReq = AdGuideAiRequest.of(project, product,
+                                                                    request);
+                                                    return adCopyService.generateVisualGuidesMono(aiReq)
+                                                                    .map(options -> new AdGuideResponse(projectId,
+                                                                                    options));
+                                            }))
+                            .onErrorMap(ex -> (ex instanceof ApiException) ? ex
+                                            : ApiException.of(ErrorCode.AD_GUIDE_GENERATION_FAILED,
+                                                            ex.getMessage()));
+    }
 
-                return Mono.zip(productMono, trendsMono)
-                                .flatMap(tuple -> {
-                                        Product product = tuple.getT1();
-                                        AdTrendsResponse trends = tuple.getT2();
+    public Mono<List<String>> generateCopyVariations(Long projectId, CopyVariationRequest request, Long companyId) {
+            return projectRepository.findById(projectId)
+                            .filter(p -> p.getCompanyId().equals(companyId))
+                            .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.PROJECT_NOT_FOUND,
+                                            "Project not found: " + projectId)))
+                            .flatMap(project -> adCopyService.generateCopyVariationsMono(request.selectedOption(),
+                                            project.getAdMessageTarget()))
+                            .onErrorMap(ex -> (ex instanceof ApiException) ? ex
+                                            : ApiException.of(ErrorCode.AD_COPY_GENERATION_FAILED,
+                                                            ex.getMessage()));
+    }
 
-                                        AdGuideAiRequest aiReq = AdGuideAiRequest.from(productId, product, date, req,
-                                                        trends);
-
-                                        return adCopyService.generateAdGuidesMono(aiReq);
-                                })
-                                .onErrorMap(ex -> (ex instanceof ApiException) ? ex
-                                                : ApiException.of(ErrorCode.AD_GUIDE_GENERATION_FAILED,
-                                                                ex.getMessage()));
-        }
-
-        public Mono<FinalCopyResponse> createAdCopies(long productId, FinalCopyRequest req) {
-                if (req.selectedGuideline() == null || req.selectedGuideline().isEmpty()) {
-                        return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED,
-                                        "selectedGuideline is required"));
-                }
-                return productRepository.findById(productId)
-                                .switchIfEmpty(Mono.error(
-                                                ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND,
-                                                                "product not found id=" + productId)))
-                                .flatMap(product -> Mono.fromCallable(() -> {
-                                        return adCopyService.generateFinalCopies(req);
-                                })
-                                                .subscribeOn(Schedulers.boundedElastic()))
-                                .onErrorMap(ex -> (ex instanceof ApiException) ? ex
-                                                : ApiException.of(ErrorCode.AD_COPY_GENERATION_FAILED,
-                                                                ex.getMessage()));
-        }
-
-        public Mono<AdCreateResponse> createProjectAndContents(
-                        long productId,
-                        AdCreateRequest req,
-                        FileStorage.StoredFile stored,
-                        long userId) {
-                if (stored == null || stored.fileUrl() == null)
-                        return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "file required"));
-
-                return productRepository.existsById(productId)
-                                .flatMap(exists -> exists ? Mono.empty()
-                                                : Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND,
-                                                                "product not found")))
-                                .then(adCreateRepository.findCompanyIdByProductId(productId))
-                                .flatMap(companyId -> adCreateRepository.insertProject(
-                                                companyId,
-                                                productId,
-                                                req.projectType(),
-                                                req.projectTitle(),
-                                                req.requestText(),
-                                                userId,
-                                                req.adFocus(),
-                                                req.adMessageTarget(),
-                                                stored.fileUrl())
-                                                .flatMap(projectId -> insertContents(companyId, productId, projectId,
-                                                                req, stored, userId)
-                                                                .collectList()
-                                                                .flatMap(contentIds -> {
-                                                                        return Mono.just(new AdCreateResponse(projectId,
-                                                                                        contentIds, null));
-                                                                })))
-                                .as(tx::transactional);
-        }
-
-        private Flux<Long> insertContents(
-                        long companyId,
-                        long productId,
-                        long projectId,
-                        AdCreateRequest req,
-                        FileStorage.StoredFile stored,
-                        long userId) {
-                int bannerRatio = 0;
-                if (req.bannerSize() != null) {
-                        if (req.bannerSize().contains("1:1"))
-                                bannerRatio = 1;
-                        else if (req.bannerSize().contains("16:9"))
-                                bannerRatio = 2;
-                        else if (req.bannerSize().contains("9:16"))
-                                bannerRatio = 3;
-                }
-
-                Integer finalBannerRatio = bannerRatio;
-
-                return Flux.fromIterable(req.selectedTypes())
-                                .flatMap(type -> {
-                                        String contentType = "IMAGE";
-                                        String platform = "INSTAGRAM";
-
-                                        if (type != null) {
-                                                String upper = type.toUpperCase();
-                                                if (upper.contains("VIDEO") || upper.contains("SHORT")) {
-                                                        contentType = "VIDEO";
-                                                        platform = "YOUTUBE";
-                                                }
-                                        }
-
-                                        return adCreateRepository.insertContent(
-                                                        companyId,
-                                                        productId,
-                                                        projectId,
-                                                        contentType,
-                                                        platform,
-                                                        req.projectTitle(),
-                                                        req.selectedCopy() != null ? req.selectedCopy().body()
-                                                                        : "",
-                                                        req.selectedKeywords() != null
-                                                                        && !req.selectedKeywords().isEmpty()
-                                                                                        ? String.join(",", req
-                                                                                                        .selectedKeywords())
-                                                                                        : null,
-                                                        userId,
-                                                        finalBannerRatio)
-                                                        .flatMap(contentId -> adCreateRepository.insertContentAsset(
-                                                                        contentId,
-                                                                        stored.fileUrl(),
-                                                                        stored.mimeType(),
-                                                                        stored.fileSize())
-                                                                        .thenReturn(contentId));
-                                });
-        }
-
-        public Mono<Long> saveAdGenerationLog(long productId, AdGenLogRequest req, long userId) {
-                return productRepository.existsById(productId)
-                                .flatMap(exists -> exists ? Mono.empty()
-                                                : Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND,
-                                                                "product not found")))
-                                .then(adCreateRepository.findCompanyIdByProductId(productId))
-                                .flatMap(companyId -> {
-                                        String finalCopyJson = "{}";
-                                        String guidelineJson = "{}";
-                                        try {
-                                                finalCopyJson = objectMapper.writeValueAsString(req.finalCopy());
-                                                guidelineJson = objectMapper.writeValueAsString(req.guideline());
-                                        } catch (JsonProcessingException e) {
-                                                finalCopyJson = String.valueOf(req.finalCopy());
-                                                guidelineJson = String.valueOf(req.guideline());
-                                        }
-
-                                        return adGenLogRepository.save(
-                                                        companyId,
-                                                        userId,
-                                                        productId,
-                                                        finalCopyJson,
-                                                        guidelineJson,
-                                                        req.selectionReason());
-                                });
-        }
-
-        public Mono<AdGuideResponse> generateAdGuides(Long projectId, AdGuideRequest request, Long companyId) {
-                return projectRepository.findById(projectId)
-                                .filter(p -> p.getCompanyId().equals(companyId))
-                                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.PROJECT_NOT_FOUND,
-                                                "Project not found: " + projectId)))
-                                .flatMap(project -> productRepository.findById(project.getProductId())
-                                                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND,
-                                                                "Product not found")))
-                                                .flatMap(product -> {
-                                                        AdGuideAiRequest aiReq = AdGuideAiRequest.of(project, product,
-                                                                        request);
-                                                        return adCopyService.generateVisualGuidesMono(aiReq)
-                                                                        .map(options -> new AdGuideResponse(projectId,
-                                                                                        options));
-                                                }))
-                                .onErrorMap(ex -> (ex instanceof ApiException) ? ex
-                                                : ApiException.of(ErrorCode.AD_GUIDE_GENERATION_FAILED,
-                                                                ex.getMessage()));
-        }
-
-        public Mono<List<String>> generateCopyVariations(Long projectId, CopyVariationRequest request, Long companyId) {
-                return projectRepository.findById(projectId)
-                                .filter(p -> p.getCompanyId().equals(companyId))
-                                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.PROJECT_NOT_FOUND,
-                                                "Project not found: " + projectId)))
-                                .flatMap(project -> adCopyService.generateCopyVariationsMono(request.selectedOption(),
-                                                project.getAdMessageTarget()))
-                                .onErrorMap(ex -> (ex instanceof ApiException) ? ex
-                                                : ApiException.of(ErrorCode.AD_COPY_GENERATION_FAILED,
-                                                                ex.getMessage()));
-        }
+    // 임시 무결설 체크
+    private int normalizeFocus(int v) {
+        if (0 <= v && v <= 4) return v;
+        if (0 <= v && v <= 100) return Math.min(4, Math.max(0, Math.round(v / 25f)));
+        return 0;
+    }
 }

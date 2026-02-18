@@ -2,7 +2,10 @@ package com.example.chillgram.domain.ai.service;
 
 import com.example.chillgram.common.exception.ApiException;
 import com.example.chillgram.common.exception.ErrorCode;
+import com.example.chillgram.domain.advertising.dto.AdCreateRequest;
+import com.example.chillgram.domain.advertising.dto.AdCreateResponse;
 import com.example.chillgram.domain.advertising.dto.jobs.CreateJobRequest;
+import com.example.chillgram.domain.advertising.dto.jobs.JobEnums;
 import com.example.chillgram.domain.advertising.dto.jobs.JobEnums.JobStatus;
 import com.example.chillgram.domain.advertising.dto.jobs.JobResponse;
 import com.example.chillgram.domain.advertising.dto.jobs.JobResultRequest;
@@ -14,10 +17,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.reactive.TransactionalOperator;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import lombok.extern.slf4j.Slf4j;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -81,47 +86,6 @@ public class JobService {
                                 eventPayload,
                                 now))
                         .thenReturn(jobId));
-    }
-
-    /**
-     * Low-level insert without creating a transaction. Caller may wrap this in a
-     * transaction.
-     */
-    public Mono<Void> insertJobTaskAndOutbox(UUID jobId, long projectId, CreateJobRequest req, String traceId) {
-        UUID outboxId = UUID.randomUUID();
-        OffsetDateTime now = OffsetDateTime.now();
-
-        ObjectNode eventPayload = om.createObjectNode();
-        eventPayload.put("jobId", jobId.toString());
-        eventPayload.put("projectId", projectId);
-        eventPayload.put("jobType", req.jobType().name());
-        eventPayload.set("payload", req.payload());
-        eventPayload.put("requestedAt", now.toString());
-        eventPayload.put("traceId", traceId == null ? "" : traceId);
-
-        // [Fix] Debezium이 없으므로 직접 RabbitMQ 발행 (Outbox는 이력 및 재발행용으로 유지)
-        return jobRepo.insertRequested(jobId, projectId, req.jobType(), req.payload(), now)
-                .then(outboxRepo.insertOutbox(
-                        outboxId,
-                        "JOB",
-                        jobId,
-                        "JOB_REQUESTED",
-                        jobsRoutingKey,
-                        eventPayload,
-                        now))
-                .then(Mono.fromRunnable(() -> {
-                    try {
-                        // [Direct Publishing]
-                        // [Fix] ObjectNode는 직렬화되지 않으므로 String으로 변환하여 전송
-                        amqpTemplate.convertAndSend(jobsRoutingKey, eventPayload.toString());
-                        log.info("Published job request to RabbitMQ: jobId={}, routingKey={}", jobId, jobsRoutingKey);
-                    } catch (Exception e) {
-                        log.error("Failed to publish job request to RabbitMQ: jobId={}", jobId, e);
-                        // 여기서 에러를 던지면 전체 트랜잭션이 롤백될 수 있음 (ProductService 구조상)
-                        // 하지만 비동기 메시징 실패는 치명적이므로 에러를 전파하는 것이 맞음
-                        throw new RuntimeException("Failed to publish job request", e);
-                    }
-                }));
     }
 
     public Mono<JobResponse> getJob(UUID jobId) {

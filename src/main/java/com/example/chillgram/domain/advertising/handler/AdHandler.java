@@ -9,6 +9,7 @@ import com.example.chillgram.common.google.FileStorage;
 import com.example.chillgram.domain.advertising.service.AdService;
 import com.example.chillgram.domain.ai.dto.AdCopiesRequest;
 import com.example.chillgram.common.security.AuthPrincipal;
+import com.example.chillgram.domain.qa.handler.QaHandler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.multipart.FilePart;
@@ -83,29 +84,15 @@ public class AdHandler {
 
     public Mono<ServerResponse> createAdProjectAndContents(ServerRequest req) {
         long productId = Long.parseLong(req.pathVariable("id"));
+        Mono<Long> userIdMono = extractUserId(req);
 
-        // JWT userId 추출
-        Mono<Long> userIdMono = req.principal()
-                .map(principal -> {
-
-                    if (principal instanceof org.springframework.security.authentication.UsernamePasswordAuthenticationToken auth) {
-                        return ((AuthPrincipal) auth.getPrincipal()).userId();
-                    }
-                    throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보를 확인할 수 없습니다.");
-                })
-                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "로그인이 필요합니다.")));
-
-        return userIdMono.flatMap(userId -> req.multipartData()
-                .flatMap(parts -> {
+        return userIdMono.flatMap(userId ->
+                req.multipartData().flatMap(parts -> {
 
                     Part payloadPart = parts.getFirst("payload");
-                    Part filePart = parts.getFirst("file");
 
                     if (!(payloadPart instanceof FormFieldPart p)) {
                         return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "payload part required"));
-                    }
-                    if (!(filePart instanceof FilePart f)) {
-                        return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "file part required"));
                     }
 
                     AdCreateRequest body;
@@ -125,9 +112,14 @@ public class AdHandler {
                         return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, errorMsg));
                     }
 
-                    return fileStorage.store(f)
-                            .flatMap(res -> ServerResponse.ok().bodyValue(res));
-                }));
+                    if (body.selectedProductImage().url()== null) {
+                        return Mono.error(ApiException.of(ErrorCode.VALIDATION_FAILED, "base img url is required"));
+                    }
+
+                    return adService.createProjectAndContents(productId, userId, body)
+                            .flatMap(result -> ServerResponse.ok().bodyValue(result));
+                })
+        );
     }
 
     public Mono<ServerResponse> createAdLog(ServerRequest req) {
@@ -146,5 +138,19 @@ public class AdHandler {
                         .flatMap(logId -> ServerResponse.ok()
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .bodyValue(java.util.Map.of("success", true, "logId", logId))));
+    }
+
+    /**
+     * JWT principal에서 userId 추출
+     */
+    private Mono<Long> extractUserId(ServerRequest request) {
+        return request.principal()
+                .map(principal -> {
+                    if (principal instanceof org.springframework.security.authentication.UsernamePasswordAuthenticationToken auth) {
+                        return ((AuthPrincipal) auth.getPrincipal()).userId();
+                    }
+                    throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보를 확인할 수 없습니다.");
+                })
+                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.UNAUTHORIZED, "로그인이 필요합니다.")));
     }
 }

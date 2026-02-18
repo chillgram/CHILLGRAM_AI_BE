@@ -3,6 +3,6 @@ package com.example.chillgram.domain.advertising.dto;
 import java.util.List;
 
 public record AdCreateResponse(
-        long projectId,
+        Long projectId,
         List<Long> contentIds,
         java.util.UUID jobId) {}
