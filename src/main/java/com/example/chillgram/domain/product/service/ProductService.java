@@ -357,6 +357,8 @@ public class ProductService {
                                                                                                                         savedContent.getId(),
                                                                                                                         stored.fileUrl()))))
                                                                                                         // 4.
+
+                                                                                                        //
                                                                                                         // 보상(Compensation):
                                                                                                         // DB 트랜잭션 실패 시
                                                                                                         // GCS 업로드 취소
