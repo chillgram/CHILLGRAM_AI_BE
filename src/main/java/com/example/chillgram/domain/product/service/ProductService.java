@@ -24,6 +24,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.micrometer.common.util.StringUtils;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -107,21 +108,36 @@ public class ProductService {
                         if (total == 0) {
                                 return Mono.just(new PageImpl<>(List.of(), pageable, 0));
                         }
-                        return productFlux.flatMap(product -> {
+                        return productFlux.collectList().flatMap(products -> {
+                                var companyIds = products.stream()
+                                                .map(Product::getCompanyId)
+                                                .distinct().toList();
+                                var userIds = products.stream()
+                                                .map(Product::getCreatedBy)
+                                                .distinct().toList();
                                 return Mono.zip(
-                                                companyRepository.findById(product.getCompanyId())
-                                                                .map(Company::getName)
-                                                                .defaultIfEmpty("Unknown"),
-                                                appUserRepository.findById(product.getCreatedBy())
-                                                                .map(AppUser::getName)
-                                                                .defaultIfEmpty("Unknown"))
-                                                .map(namesTuple -> {
-                                                        ProductResponse res = ProductResponse.from(product);
-                                                        res.setCompanyName(namesTuple.getT1());
-                                                        res.setCreatedByName(namesTuple.getT2());
-                                                        return res;
+                                                companyRepository.findAllById(companyIds)
+                                                                .collectMap(Company::getCompanyId, Company::getName),
+                                                appUserRepository.findAllById(userIds)
+                                                                .collectMap(AppUser::getUserId, AppUser::getName))
+                                                .map(tuple -> {
+                                                        Map<Long, String> companyNames = tuple.getT1();
+                                                        Map<Long, String> userNames = tuple.getT2();
+                                                        List<ProductResponse> list = products.stream()
+                                                                        .map(product -> {
+                                                                                ProductResponse res = ProductResponse
+                                                                                                .from(product);
+                                                                                res.setCompanyName(companyNames
+                                                                                                .getOrDefault(product.getCompanyId(),
+                                                                                                                "Unknown"));
+                                                                                res.setCreatedByName(userNames
+                                                                                                .getOrDefault(product.getCreatedBy(),
+                                                                                                                "Unknown"));
+                                                                                return res;
+                                                                        }).toList();
+                                                        return new PageImpl<>(list, pageable, total);
                                                 });
-                        }).collectList().map(list -> new PageImpl<>(list, pageable, total));
+                        });
                 });
         }
 
@@ -232,7 +248,7 @@ public class ProductService {
          * 도면 업로드 및 목업 생성 작업 요청
          * 트랜잭션과 보상(Compensation)을 명시적으로 관리
          */
-        @Transactional
+
         public Mono<com.example.chillgram.domain.product.dto.PackageMockupResponse> addPackageMockup(long productId,
                         long projectId, FilePart file, AuthPrincipal principal) {
                 return productRepository.findById(productId)
