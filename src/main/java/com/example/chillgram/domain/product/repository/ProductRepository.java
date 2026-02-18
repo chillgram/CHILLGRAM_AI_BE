@@ -28,4 +28,42 @@ public interface ProductRepository extends R2dbcRepository<Product, Long> {
         Mono<Long> countByCompanyIdAndNameContainingIgnoreCaseOrDescriptionContainingIgnoreCase(Long companyId,
                         String name,
                         String description);
+
+        // Optimized Query (N+1 Solve)
+        @org.springframework.data.r2dbc.repository.Query("""
+                            SELECT p.product_id AS id,
+                                   p.company_id,
+                                   p.name,
+                                   p.category,
+                                   p.description,
+                                   p.is_active,
+                                   p.created_by,
+                                   p.created_at,
+                                   p.updated_at,
+                                   p.review_url,
+                                   c.name AS company_name,
+                                   u.name AS created_by_name
+                              FROM product p
+                              LEFT JOIN company c ON p.company_id = c.company_id
+                              LEFT JOIN app_user u ON p.created_by = u.user_id
+                             WHERE p.company_id = :companyId
+                             ORDER BY p.created_at DESC
+                             LIMIT :limit OFFSET :offset
+                        """)
+        Flux<ProductWithDetails> findAllWithDetails(Long companyId, int limit, long offset);
+
+        record ProductWithDetails(
+                        Long id,
+                        Long companyId,
+                        String name,
+                        String category,
+                        String description,
+                        Boolean isActive,
+                        Long createdBy,
+                        java.time.LocalDateTime createdAt,
+                        java.time.LocalDateTime updatedAt,
+                        String reviewUrl,
+                        String companyName,
+                        String createdByName) {
+        }
 }

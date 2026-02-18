@@ -88,58 +88,79 @@ public class ProductService {
          * 제품 목록 조회 (검색 및 페이징 포함)
          */
         public Mono<Page<ProductResponse>> getProductList(Long companyId, String search, Pageable pageable) {
-                Mono<Long> countMono;
-                Flux<Product> productFlux;
-
+                // 1. Search Case (Legacy Logic for Search)
                 if (StringUtils.isNotBlank(search)) {
-                        countMono = productRepository
+                        return productRepository
                                         .countByCompanyIdAndNameContainingIgnoreCaseOrDescriptionContainingIgnoreCase(
-                                                        companyId, search, search);
-                        productFlux = productRepository
-                                        .findByCompanyIdAndNameContainingIgnoreCaseOrDescriptionContainingIgnoreCase(
-                                                        companyId, search, search, pageable);
-                } else {
-                        countMono = productRepository.countByCompanyId(companyId);
-                        productFlux = productRepository.findAllByCompanyIdOrderByCreatedAtDesc(companyId, pageable);
+                                                        companyId, search, search)
+                                        .flatMap(total -> {
+                                                if (total == 0) {
+                                                        return Mono.just(new PageImpl<>(List.of(), pageable, 0));
+                                                }
+                                                return productRepository
+                                                                .findByCompanyIdAndNameContainingIgnoreCaseOrDescriptionContainingIgnoreCase(
+                                                                                companyId, search, search, pageable)
+                                                                .collectList()
+                                                                .flatMap(products -> enrichProducts(products, pageable,
+                                                                                total));
+                                        });
                 }
 
-                return countMono.flatMap(total -> {
-                        if (total == 0) {
-                                return Mono.just(new PageImpl<>(List.of(), pageable, 0));
-                        }
-                        return productFlux.collectList().flatMap(products -> {
-                                var companyIds = products.stream()
-                                                .map(Product::getCompanyId)
-                                                .distinct().toList();
-                                var userIds = products.stream()
-                                                .map(Product::getCreatedBy)
-                                                .distinct().toList();
-                                return Mono.zip(
-                                                companyRepository.findAllById(companyIds)
-                                                                .collectMap(Company::getCompanyId, Company::getName),
-                                                appUserRepository.findAllById(userIds)
-                                                                .collectMap(AppUser::getUserId, AppUser::getName))
-                                                .map(tuple -> {
-                                                        Map<Long, String> companyNames = tuple.getT1();
-                                                        Map<Long, String> userNames = tuple.getT2();
-                                                        List<ProductResponse> list = products.stream()
-                                                                        .map(product -> {
-                                                                                ProductResponse res = ProductResponse
-                                                                                                .from(product);
-                                                                                res.setCompanyName(companyNames
-                                                                                                .getOrDefault(product
-                                                                                                                .getCompanyId(),
-                                                                                                                "Unknown"));
-                                                                                res.setCreatedByName(userNames
-                                                                                                .getOrDefault(product
-                                                                                                                .getCreatedBy(),
-                                                                                                                "Unknown"));
-                                                                                return res;
-                                                                        }).toList();
-                                                        return new PageImpl<>(list, pageable, total);
-                                                });
-                        });
-                });
+                // 2. Optimized Case (No Search) - Solves N+1 & Connection Pool Exhaustion
+                return productRepository.countByCompanyId(companyId)
+                                .flatMap(total -> {
+                                        if (total == 0) {
+                                                return Mono.just(new PageImpl<>(List.of(), pageable, 0));
+                                        }
+                                        return productRepository
+                                                        .findAllWithDetails(companyId, pageable.getPageSize(),
+                                                                        pageable.getOffset())
+                                                        .map(details -> ProductResponse.builder()
+                                                                        .id(details.id())
+                                                                        .companyId(details.companyId())
+                                                                        .name(details.name())
+                                                                        .category(details.category())
+                                                                        .description(details.description())
+                                                                        .reviewUrl(details.reviewUrl())
+                                                                        .isActive(details.isActive())
+                                                                        .createdBy(details.createdBy())
+                                                                        .createdAt(details.createdAt())
+                                                                        .updatedAt(details.updatedAt())
+                                                                        .companyName(details.companyName() != null
+                                                                                        ? details.companyName()
+                                                                                        : "Unknown")
+                                                                        .createdByName(details.createdByName() != null
+                                                                                        ? details.createdByName()
+                                                                                        : "Unknown")
+                                                                        .build())
+                                                        .collectList()
+                                                        .map(list -> new PageImpl<>(list, pageable, total));
+                                });
+        }
+
+        // Helper for Search Case (Legacy N+1 Logic - needed for search results)
+        private Mono<PageImpl<ProductResponse>> enrichProducts(List<Product> products, Pageable pageable, Long total) {
+                var companyIds = products.stream().map(Product::getCompanyId).distinct().toList();
+                var userIds = products.stream().map(Product::getCreatedBy).distinct().toList();
+
+                return Mono.zip(
+                                companyRepository.findAllById(companyIds).collectMap(Company::getCompanyId,
+                                                Company::getName),
+                                appUserRepository.findAllById(userIds).collectMap(AppUser::getUserId, AppUser::getName))
+                                .map(tuple -> {
+                                        Map<Long, String> companyNames = tuple.getT1();
+                                        Map<Long, String> userNames = tuple.getT2();
+                                        List<ProductResponse> list = products.stream()
+                                                        .map(product -> {
+                                                                ProductResponse res = ProductResponse.from(product);
+                                                                res.setCompanyName(companyNames.getOrDefault(
+                                                                                product.getCompanyId(), "Unknown"));
+                                                                res.setCreatedByName(userNames.getOrDefault(
+                                                                                product.getCreatedBy(), "Unknown"));
+                                                                return res;
+                                                        }).toList();
+                                        return new PageImpl<>(list, pageable, total);
+                                });
         }
 
         /**
