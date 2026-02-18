@@ -140,43 +140,46 @@ public class AdService {
                                                                 ex.getMessage()));
         }
 
-        public Mono<AdCreateResponse> createProjectAndContents(long productId, long userId, AdCreateRequest req) {
-                Mono<AdCreateResponse> saved = productRepository.existsById(productId)
-                                .flatMap(exists -> exists
-                                                ? Mono.empty()
-                                                : Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND,
-                                                                "product not found")))
-                                .then(adCreateRepository.findCompanyIdByProductId(productId))
-                                .switchIfEmpty(Mono.error(ApiException.of(
-                                                ErrorCode.AD_PRODUCT_NOT_FOUND,
-                                                "company not found by productId")))
-                                .flatMap(companyId -> {
-                                        // BASIC에서 선택한 이미지 URL을 project에 저장
-                                        String userImgUrl = req.selectedProductImage() != null
-                                                        ? req.selectedProductImage().url()
-                                                        : null;
+    public Mono<AdCreateResponse> createProjectAndContents(long productId, long userId, AdCreateRequest req) {
 
-                                        return adCreateRepository.insertProject(
-                                                        companyId,
-                                                        productId,
-                                                        req.projectType(),
-                                                        req.projectTitle(),
-                                                        req.requestText(),
-                                                        userId,
-                                                        normalizeFocus(req.adFocus()),
-                                                        req.adMessageTarget(),
-                                                        userImgUrl)
-                                                        .flatMap(projectId -> insertContents(companyId, productId,
-                                                                        projectId, req, userId)
-                                                                        .collectList()
-                                                                        .map(contentIds -> new AdCreateResponse(
-                                                                                        projectId, contentIds, null)));
+        return productRepository.existsById(productId)
+                .flatMap(exists -> exists
+                        ? Mono.empty()
+                        : Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND, "product not found")))
+                .then(adCreateRepository.findCompanyIdByProductId(productId))
+                .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.AD_PRODUCT_NOT_FOUND, "company not found by productId")))
+                .flatMap(companyId -> {
+                    String userImgUrl = req.selectedProductImage() != null ? req.selectedProductImage().url() : null;
+
+                    return adCreateRepository.insertProject(
+                                    companyId,
+                                    productId,
+                                    req.projectType(),
+                                    req.projectTitle(),
+                                    req.requestText(),
+                                    userId,
+                                    normalizeFocus(req.adFocus()),
+                                    req.adMessageTarget(),
+                                    userImgUrl
+                            )
+                            .flatMap(projectId ->
+                                    insertContents(companyId, productId, projectId, req, userId)
+                                            .collectList()
+                                            .map(contentIds -> new AdCreateResponse(projectId, contentIds, null))
+                            );
+                })
+                .flatMap(resp ->
+                        productRepository.findCategoryByProductId(productId)
+                                .defaultIfEmpty("0")
+                                .flatMap(cat -> {
+                                    AdCreateResponse respWithCat = new AdCreateResponse(resp.projectId(), resp.contentIds(), cat);
+
+                                    return publishJobs(productId, userId, req, respWithCat)
+                                            .thenReturn(respWithCat);
                                 })
-                                .as(tx::transactional);
-
-                // job 발행 (payload에 배너 ratio 넣음)
-                return saved.flatMap(resp -> publishJobs(productId, userId, req, resp).thenReturn(resp));
-        }
+                )
+                .as(tx::transactional);
+    }
 
         /**
          * content 개수만큼 jobService.requestJob 호출(= outbox 발행)
@@ -205,17 +208,17 @@ public class AdService {
                                         payload.put("productId", productId);
                                         payload.put("projectId", resp.projectId());
                                         payload.put("contentId", contentId);
+                                        payload.put("productName", req.productName());
                                         payload.put("guideLine", req.selectedGuide());
-                                        payload.put("typoText", req.selectedCopy().body() == null ? ""
-                                                        : req.selectedCopy().body());
-                                        payload.put("baseImageUrl",
-                                                        req.selectedProductImage() != null
-                                                                        ? req.selectedProductImage().url()
-                                                                        : "");
+                                        payload.put("typoText", req.selectedCopy().body() == null ? "" : req.selectedCopy().body());
+                                        payload.put("baseImageUrl", req.selectedProductImage() != null ? req.selectedProductImage().url() : "");
                                         payload.put("bannerSize", req.bannerSize() == null ? "" : req.bannerSize());
-                                        payload.put("adMessageTarget",
-                                                        req.adMessageTarget() == null ? 0 : req.adMessageTarget());
+                                        payload.put("adMessageTarget", req.adMessageTarget() == null ? 0 : req.adMessageTarget());
+                                        payload.put("category", resp.category());
 
+                                        if (jobType == JobEnums.JobType.BANNER) {
+                                            payload.put("bannerRatio", bannerRatio);
+                                        }
                                         // ✅ 핵심: 배너만 ratio idx를 큐 payload에 실어야 워커가 그대로 사용 가능
                                         if (jobType == JobEnums.JobType.BANNER) {
                                                 payload.put("bannerRatio", bannerRatio); // 1~10, 없으면 0

@@ -5,4 +5,4 @@ import java.util.List;
 public record AdCreateResponse(
         Long projectId,
         List<Long> contentIds,
-        java.util.UUID jobId) {}
+        String category) {}

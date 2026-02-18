@@ -2,6 +2,7 @@ package com.example.chillgram.domain.product.repository;
 
 import com.example.chillgram.domain.product.entity.Product;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.r2dbc.repository.Query;
 import org.springframework.data.r2dbc.repository.R2dbcRepository;
 import org.springframework.stereotype.Repository;
 import reactor.core.publisher.Flux;
@@ -13,10 +14,10 @@ public interface ProductRepository extends R2dbcRepository<Product, Long> {
         // For Dashboard Stats
         Mono<Long> countByCompanyId(Long companyId);
 
-        @org.springframework.data.r2dbc.repository.Query("SELECT COUNT(*) FROM product WHERE company_id = :companyId AND is_active = true")
+        @Query("SELECT COUNT(*) FROM product WHERE company_id = :companyId AND is_active = true")
         Mono<Long> countByCompanyIdAndIsActiveTrue(Long companyId);
 
-        @org.springframework.data.r2dbc.repository.Query("SELECT COUNT(*) FROM product WHERE company_id = :companyId AND is_active = false")
+        @Query("SELECT COUNT(*) FROM product WHERE company_id = :companyId AND is_active = false")
         Mono<Long> countByCompanyIdAndIsActiveFalse(Long companyId);
 
         // For List with Search
@@ -30,7 +31,7 @@ public interface ProductRepository extends R2dbcRepository<Product, Long> {
                         String description);
 
         // Optimized Query (N+1 Solve)
-        @org.springframework.data.r2dbc.repository.Query("""
+        @Query("""
                             SELECT p.product_id,
                                    p.company_id,
                                    p.name,
@@ -66,4 +67,7 @@ public interface ProductRepository extends R2dbcRepository<Product, Long> {
                         String companyName,
                         String createdByName) {
         }
+
+        @Query("SELECT p.category FROM product p WHERE p.product_id = :productId")
+        Mono<String> findCategoryByProductId(Long productId);
 }
