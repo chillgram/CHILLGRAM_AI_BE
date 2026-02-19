@@ -33,7 +33,6 @@ public class JobService {
     private final ObjectMapper om;
     private final String jobsRoutingKey;
     private final com.example.chillgram.domain.content.service.ContentService contentService;
-    private final org.springframework.amqp.core.AmqpTemplate amqpTemplate;
     private final ProjectRepository projectRepository; // Added field
 
     private final com.example.chillgram.common.google.GcsFileStorage gcs;
@@ -45,7 +44,6 @@ public class JobService {
             ObjectMapper om,
             @Value("${app.jobs.routing-key}") String jobsRoutingKey,
             com.example.chillgram.domain.content.service.ContentService contentService,
-            org.springframework.amqp.core.AmqpTemplate amqpTemplate,
             ProjectRepository projectRepository,
             com.example.chillgram.common.google.GcsFileStorage gcs) {
         this.jobRepo = jobRepo;
@@ -54,7 +52,6 @@ public class JobService {
         this.om = om;
         this.jobsRoutingKey = jobsRoutingKey;
         this.contentService = contentService;
-        this.amqpTemplate = amqpTemplate;
         this.projectRepository = projectRepository;
         this.gcs = gcs;
     }
@@ -112,30 +109,34 @@ public class JobService {
                         // HTTPS 정규화 (이미 HTTPS면 pass-through)
                         String normalized = gcs.toPublicUrl(req.outputUri());
 
-                        // [Fix] DIELINE 작업 성공 시 Content 업데이트 (contentId 우선)
+                        // [Fix] Job 성공 시 Content 업데이트 (DIELINE + SNS/BANNER/VIDEO)
                         Mono<Void> sideEffect = Mono.empty();
-                        if (existing
-                                .jobType() == com.example.chillgram.domain.advertising.dto.jobs.JobEnums.JobType.DIELINE) {
-                            JsonNode pl = existing.payload();
-                            if (pl != null && pl.has("contentId")) {
-                                long contentId = pl.get("contentId").asLong();
-                                // Content 기반 목업 결과 업데이트
-                                sideEffect = contentService.updateMockupResult(contentId, normalized).then();
-                            } else if (pl != null && pl.has("projectId")) {
-                                long projectId = pl.get("projectId").asLong();
-                                // Project 기반 목업 결과 업데이트 (fallback)
-                                sideEffect = projectRepository.findById(projectId)
-                                        .flatMap(project -> {
-                                            project.applyMockupResult(normalized);
-                                            return projectRepository.save(project);
-                                        })
-                                        .switchIfEmpty(Mono.fromRunnable(() -> log.warn(
-                                                "Project not found when applying mockup result. projectId={}, jobId={}",
-                                                projectId, jobId)))
-                                        .then();
-                            } else {
-                                log.warn("DIELINE job completed but no contentId or projectId in payload. jobId={}",
-                                        jobId);
+                        JobEnums.JobType type = existing.jobType();
+
+                        // 1. Content 기반 업데이트 (DIELINE, SNS, BANNER, VIDEO 모두 해당)
+                        if (existing.payload() != null && existing.payload().has("contentId")) {
+                            long contentId = existing.payload().get("contentId").asLong();
+                            // 이름 변경된 메서드 호출 (updateMockupResult -> updateUrlFromJob)
+                            sideEffect = contentService.updateUrlFromJob(contentId, normalized).then();
+
+                        } else if (type == JobEnums.JobType.DIELINE && existing.payload() != null
+                                && existing.payload().has("projectId")) {
+                            // 2. Project 기반 업데이트 (DIELINE fallback)
+                            long projectId = existing.payload().get("projectId").asLong();
+                            sideEffect = projectRepository.findById(projectId)
+                                    .flatMap(project -> {
+                                        project.applyMockupResult(normalized);
+                                        return projectRepository.save(project);
+                                    })
+                                    .switchIfEmpty(Mono.fromRunnable(() -> log.warn(
+                                            "Project not found when applying mockup result. projectId={}, jobId={}",
+                                            projectId, jobId)))
+                                    .then();
+                        } else {
+                            if (type == JobEnums.JobType.DIELINE || type == JobEnums.JobType.SNS
+                                    || type == JobEnums.JobType.BANNER || type == JobEnums.JobType.VIDEO) {
+                                log.warn("Job completed but no contentId or projectId in payload. jobId={}, type={}",
+                                        jobId, type);
                             }
                         }
 
@@ -150,18 +151,17 @@ public class JobService {
 
                         // [Fix] Job 실패 시 처리 (contentId 우선)
                         Mono<Void> failSideEffect = Mono.empty();
-                        if (existing
-                                .jobType() == com.example.chillgram.domain.advertising.dto.jobs.JobEnums.JobType.DIELINE) {
-                            JsonNode pl = existing.payload();
-                            if (pl != null && pl.has("contentId")) {
-                                long contentId = pl.get("contentId").asLong();
-                                // Content 기반 목업 실패 처리 (status → ARCHIVED)
-                                failSideEffect = contentService.updateMockupFailed(contentId).then();
-                            } else if (pl != null && pl.has("projectId")) {
-                                long projectId = pl.get("projectId").asLong();
-                                // Project 기반 실패 시 로그만 (fallback)
-                                log.info("Project mockup generation failed. projectId={}, reason={}", projectId, em);
-                            }
+                        JsonNode pl = existing.payload();
+
+                        if (pl != null && pl.has("contentId")) {
+                            long contentId = pl.get("contentId").asLong();
+                            // Content 기반 실패 처리 (모든 Job Type 공통)
+                            failSideEffect = contentService.updateMockupFailed(contentId).then();
+                        } else if (existing.jobType() == JobEnums.JobType.DIELINE && pl != null
+                                && pl.has("projectId")) {
+                            long projectId = pl.get("projectId").asLong();
+                            // Project 기반 실패 시 로그만 (fallback - DIELINE legacy)
+                            log.info("Project mockup generation failed. projectId={}, reason={}", projectId, em);
                         }
 
                         return tx.transactional(

@@ -113,4 +113,17 @@ public class ProductController {
         return productService.addPackageMockup(id, projectId, baseImageUrl, file, principal);
     }
 
+    @GetMapping("/{id}/base-images")
+    @Operation(summary = "패키지 목업용 베이스 이미지 조회", description = "AI가 생성한 광고 이미지 목록을 조회하여 패키지 목업의 베이스 이미지로 사용할 수 있게 합니다.")
+    public Mono<List<com.example.chillgram.domain.product.dto.BaseImageResponse>> getBaseImages(
+            @Parameter(description = "제품 ID", required = true) @PathVariable Long id,
+            @AuthenticationPrincipal AuthPrincipal principal) {
+
+        if (principal == null) {
+            throw ApiException.of(ErrorCode.UNAUTHORIZED, "인증 정보가 없습니다.");
+        }
+
+        return productService.getBaseImages(id);
+    }
+
 }

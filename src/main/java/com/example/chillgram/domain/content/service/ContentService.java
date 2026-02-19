@@ -72,17 +72,23 @@ public class ContentService {
     }
 
     // ============================
-    // Mockup 업데이트 (from JobService)
+    // Job 결과 업데이트 (from JobService)
     // ============================
 
-    public Mono<Content> updateMockupResult(Long contentId, String generatedImgUrl) {
+    /**
+     * Job 완료 후 결과 URL 저장
+     * - DIELINE: mockup_img_url (X) -> gcs_img_url (O) (현재 로직 유지)
+     * - SNS/BANNER/VIDEO: gcs_img_url
+     */
+    public Mono<Content> updateUrlFromJob(Long contentId, String generatedImgUrl) {
         return contentRepository.findById(contentId)
                 .switchIfEmpty(Mono.defer(() -> {
-                    log.error("Content not found for mockup result: {}", contentId);
+                    log.error("Content not found for job result: {}", contentId);
                     return Mono.error(
-                            ApiException.of(ErrorCode.NOT_FOUND, "Content not found for mockup result: " + contentId));
+                            ApiException.of(ErrorCode.NOT_FOUND, "Content not found for job result: " + contentId));
                 }))
                 .flatMap(content -> {
+                    // 모든 타입의 결과물을 gcs_img_url에 저장 (기존 updateMockup 로직과 동일)
                     content.updateMockup(generatedImgUrl);
                     return contentRepository.save(content);
                 });
@@ -118,6 +124,19 @@ public class ContentService {
         return contentAssetRepository.findById(assetId)
                 .switchIfEmpty(Mono.error(ApiException.of(ErrorCode.NOT_FOUND, "에셋을 찾을 수 없습니다.")))
                 .flatMap(contentAssetRepository::delete);
+    }
+
+    // ============================
+    // Base Image 조회 (for Package Mockup)
+    // ============================
+
+    public Flux<com.example.chillgram.domain.product.dto.BaseImageResponse> getBaseImagesByProduct(Long productId) {
+        return contentRepository.findBaseImagesByProductId(productId)
+                .map(content -> new com.example.chillgram.domain.product.dto.BaseImageResponse(
+                        gcs.toPublicUrl(content.getGcsImgUrl()),
+                        content.getContentType(), // already uppercased enum name (SNS, BANNER, VIDEO, MOCKUP)
+                        content.getProjectId(),
+                        content.getUpdatedAt()));
     }
 
     // ============================

@@ -2,7 +2,6 @@ package com.example.chillgram.domain.product.service;
 
 import com.example.chillgram.common.exception.ApiException;
 import com.example.chillgram.common.exception.ErrorCode;
-import com.example.chillgram.common.google.FileStorage.StoredFile;
 import com.example.chillgram.common.google.GcsFileStorage;
 import com.example.chillgram.domain.advertising.dto.jobs.CreateJobRequest;
 import com.example.chillgram.domain.advertising.dto.jobs.JobEnums.JobType;
@@ -35,9 +34,10 @@ import org.springframework.http.codec.multipart.FilePart;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.reactive.TransactionalOperator;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import lombok.extern.slf4j.Slf4j;
+
+import com.example.chillgram.domain.content.service.ContentService;
 
 @Service
 @Slf4j
@@ -52,6 +52,7 @@ public class ProductService {
         private final ProjectRepository projectRepository;
         private final TransactionalOperator tx;
         private final ObjectMapper om;
+        private final ContentService contentService;
 
         public ProductService(
                         ProductRepository productRepository,
@@ -62,7 +63,8 @@ public class ProductService {
                         ContentRepository contentRepo,
                         ProjectRepository projectRepository,
                         TransactionalOperator tx,
-                        ObjectMapper om) {
+                        ObjectMapper om,
+                        ContentService contentService) {
                 this.productRepository = productRepository;
                 this.companyRepository = companyRepository;
                 this.appUserRepository = appUserRepository;
@@ -72,6 +74,7 @@ public class ProductService {
                 this.projectRepository = projectRepository;
                 this.tx = tx;
                 this.om = om;
+                this.contentService = contentService;
         }
 
         /**
@@ -272,6 +275,13 @@ public class ProductService {
         }
 
         /**
+         * Base Image 조회 (via ContentService)
+         */
+        public Mono<List<com.example.chillgram.domain.product.dto.BaseImageResponse>> getBaseImages(Long productId) {
+                return contentService.getBaseImagesByProduct(productId).collectList();
+        }
+
+        /**
          * 도면 업로드 및 목업 생성 작업 요청
          * 트랜잭션과 보상(Compensation)을 명시적으로 관리
          */
@@ -319,8 +329,9 @@ public class ProductService {
                                                                                                         .projectId(projectId)
                                                                                                         .title(project.getTitle())
                                                                                                         .mockupImgUrl(stored
-                                                                                                                        .fileUrl()) // HTTPS URL
-                                                                                                                                  // 도면
+                                                                                                                        .fileUrl()) // HTTPS
+                                                                                                                                    // URL
+                                                                                                                                    // 도면
                                                                                                         .gcsImgUrl(null) // 생성된
                                                                                                                          // 목업은
                                                                                                                          // 아직
