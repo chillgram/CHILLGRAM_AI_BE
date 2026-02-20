@@ -105,4 +105,12 @@ public class Content {
         this.status = "ARCHIVED"; // [Fix] FAILED -> ARCHIVED (DB 스키마 정렬)
         this.updatedAt = LocalDateTime.now();
     }
+
+    public void updateGcsImgUrl(String url) {
+        this.gcsImgUrl = url;
+    }
+
+    public void updateBannerRatio(Integer ratio) {
+        this.bannerRatio = ratio;
+    }
 }
