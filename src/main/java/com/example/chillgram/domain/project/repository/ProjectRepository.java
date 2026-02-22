@@ -8,41 +8,41 @@ import reactor.core.publisher.Flux;
 import java.time.LocalDateTime;
 
 public interface ProjectRepository extends R2dbcRepository<Project, Long> {
-    Flux<Project> findAllByProductId(Long productId);
+  Flux<Project> findAllByProductId(Long productId);
 
-    @Query("""
-            SELECT p.project_id,
-                   p.title,
-                   p.project_type,
-                   p.status,
-                   p.ad_message_focus,
-                   p.ad_message_target,
-                   p.created_at,
-                   p.userimg_gcs_url AS user_img_gcs_url,
-                   p.dieline_gcs_url,
-                   p.mockup_result_url,
-                   COALESCE(cnt.content_count, 0) AS content_count
-              FROM project p
-              LEFT JOIN (SELECT project_id, count(*) AS content_count
-                           FROM content
-                          GROUP BY project_id) cnt
-                ON cnt.project_id = p.project_id
-             WHERE p.product_id = :productId
-             ORDER BY p.created_at DESC
-            """)
-    Flux<ProjectWithCount> findAllByProductIdWithCount(Long productId);
+  @Query("""
+      SELECT p.project_id,
+             p.title,
+             p.project_type,
+             p.status,
+             p.ad_message_focus,
+             p.ad_message_target,
+             p.created_at,
+             p.userimg_gcs_url AS user_img_gcs_url,
+             p.dieline_gcs_url,
+             p.mockup_result_url,
+             COALESCE(cnt.content_count, 0) AS content_count
+        FROM project p
+        LEFT JOIN (SELECT project_id, count(*) AS content_count
+                     FROM content
+                    GROUP BY project_id) cnt
+          ON cnt.project_id = p.project_id
+       WHERE p.product_id = :productId
+       ORDER BY p.created_at DESC
+      """)
+  Flux<ProjectWithCount> findAllByProductIdWithCount(Long productId);
 
-    record ProjectWithCount(
-            Long projectId,
-            String title,
-            Project.ProjectType projectType,
-            String status,
-            Integer adMessageFocus,
-            Integer adMessageTarget,
-            LocalDateTime createdAt,
-            String userImgGcsUrl,
-            String dielineGcsUrl,
-            String mockupResultUrl,
-            Long contentCount) {
-    }
+  record ProjectWithCount(
+      Long projectId,
+      String title,
+      Project.ProjectType projectType,
+      String status,
+      Integer adMessageFocus,
+      Integer adMessageTarget,
+      LocalDateTime createdAt,
+      String userImgGcsUrl,
+      String dielineGcsUrl,
+      String mockupResultUrl,
+      Long contentCount) {
+  }
 }

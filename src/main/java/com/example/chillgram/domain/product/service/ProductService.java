@@ -391,6 +391,7 @@ public class ProductService {
                                                                                                                                         log.warn("Failed to clean up uploaded file after transaction failure: {}",
                                                                                                                                                         stored.fileUrl(),
                                                                                                                                                         delErr);
+
                                                                                                                                         return Mono.empty();
                                                                                                                                 })
                                                                                                                                 .then(Mono.error(
