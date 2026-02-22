@@ -22,8 +22,8 @@ Chillgram은 **단일 모놀리스가 아닌 역할별로 분리된 마이크로
 │                     GCP Infrastructure                          │
 │                                                                 │
 │  ┌──────────────────┐      ┌──────────────────┐                │
-│  │  Frontend (Next) │      │  Spring AI BE     │                │
-│  │  (React / Next)  │─────▶│  (Java 21 /       │                │
+│  │ Frontend (React) │      │  Spring AI BE     │                │
+│  │ (React / Nginx)  │─────▶│  (Java 21 /       │                │
 │  └──────────────────┘ REST │   WebFlux)        │                │
 │                            └────────┬──────────┘                │
 │                                     │  AMQP (RabbitMQ)          │
@@ -403,7 +403,7 @@ public void cleanup() {
 |---|---|---|---|---|---|
 | `spring-backend` | Spring AI BE + Redis + RabbitMQ | e2-standard-2 (2vCPU / 8GB) | `10.138.0.4` | **없음** | Debian 12 |
 | `postgres` | PostgreSQL + Debezium | e2-medium (2vCPU / 4GB) | `10.138.0.2` | **없음** 🔒 | Debian 12 |
-| `chillgram-front` | Next.js 프론트엔드 | e2-micro (2vCPU / 1GB) | `10.138.0.5` | `136.117.224.89` | Debian 12 |
+| `chillgram-front` | React 프론트엔드 (Nginx) | e2-micro (2vCPU / 1GB) | `10.138.0.5` | `136.117.224.89` | Debian 12 |
 | `chillgram-pythonworker` | Python AI Worker | **e2-highmem-2** (2vCPU / **16GB**) | `10.138.0.7` | `34.105.65.201` (임시) | Ubuntu 22.04 |
 
 ---
@@ -449,7 +449,7 @@ services:
 
 ---
 
-#### `chillgram-front` — Next.js 프론트엔드 서버
+#### `chillgram-front` — React 프론트엔드 서버 (Nginx)
 
 | 항목 | 상세 |
 |---|---|
@@ -549,7 +549,7 @@ GCP **전역 외부 애플리케이션 부하 분산기(Global External HTTP(S) 
                         │
                         ▼
               chillgram-front VM (10.138.0.5, :80)
-                    Next.js 서버
+                  React + Nginx
 ```
 
 #### Load Balancer 상세 구성
@@ -585,7 +585,7 @@ GCP **전역 외부 애플리케이션 부하 분산기(Global External HTTP(S) 
 | VM | 컨테이너 | OS |
 |---|---|---|
 | `spring-backend` | Spring WebFlux BE, Redis, RabbitMQ | Debian 12 |
-| `chillgram-front` | Next.js 프론트엔드 (Docker) | Debian 12 |
+| `chillgram-front` | React 프론트엔드 (Nginx / Docker) | Debian 12 |
 | `chillgram-pythonworker` | Python AI Worker (Gemini/Diffusion) | **Ubuntu 22.04** |
 | `postgres` | PostgreSQL + Debezium CDC | Debian 12 |
 
